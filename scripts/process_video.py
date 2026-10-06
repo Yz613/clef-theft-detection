@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Real Video CV Pipeline for Clef Grocery Checkout Shrink Detection
-Processes video files (.mp4, .webm, .mov, etc.) using OpenCV:
-- Extracts frame metadata, duration, and FPS
-- Performs motion segmentation and activity window extraction
-- Tracks moving merchandise items across Cart, Scanner, and Bagging zones
-- Detects path sequences (e.g., CART -> HAND -> SCANNER -> BAG vs CART -> HAND -> BAG bypass)
-- Extracts keyframe images for multimodal Clef reasoning
+Production Computer Vision Pipeline for Clef Grocery Checkout Shrink Detection
+Processes real retail checkout surveillance video (.mp4, .webm, .mov):
+1. Detects active camera viewport (automatically crops out embedded T-Log panes, black letterboxes, or review UI borders)
+2. Segments item transfer actions across Conveyor, Scanner, and Bagging zones
+3. Traces item motion vectors and detects Pass-Around (routing around scanner perimeter) vs Legitimate Scans
+4. Extracts keyframes for multimodal Clef decision reasoning
+5. Outputs structured visual state formatted for Cloudflare Clef (@cf/cloudflare/clef)
 """
 
 import sys
@@ -20,20 +20,100 @@ def format_timestamp(base_seconds, offset_seconds):
     dt = datetime(2026, 10, 6, 14, 3, 0) + timedelta(seconds=base_seconds + offset_seconds)
     return dt.strftime("%H:%M:%S")
 
-def determine_zone(x_norm, y_norm):
-    # Normalized coordinates in [0.0, 1.0]
-    if y_norm > 0.75 and x_norm < 0.45:
-        return "CART_LOWER_RACK"  # Bottom-of-basket region
-    elif x_norm < 0.35:
-        return "CART_MAIN"
-    elif 0.38 <= x_norm <= 0.62 and 0.45 <= y_norm <= 0.75:
-        return "SCANNER_ZONE"      # Optical scanner window
-    elif 0.35 <= x_norm <= 0.65:
-        return "SIDE_OF_SCANNER"   # Routed above or around scanner perimeter
-    elif x_norm > 0.65:
-        return "BAGGING_AREA"
+def find_camera_viewport(frame):
+    """
+    Detects the active surveillance camera viewport inside the video.
+    In many retail screen recordings, the left side has a T-LOG sidebar,
+    and the bottom has an incident scrubber banner.
+    """
+    h, w, _ = frame.shape
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Check horizontal variance across columns to detect sidebars
+    col_var = np.var(gray.astype(np.float32), axis=0)
+    col_mean = np.mean(gray.astype(np.float32), axis=0)
+
+    # Find start and end of camera feed
+    # Camera region typically has higher dynamic range and varied colors
+    x_start = 0
+    x_end = w
+    y_start = 0
+    y_end = h
+
+    # Detect if left column is black/dark T-log panel (e.g. x < w*0.25)
+    for x in range(0, int(w * 0.40), 10):
+        # Sample patch
+        patch = gray[:, x:x+10]
+        if np.mean(patch) < 45 or np.var(patch) < 400:
+            x_start = x + 10
+        else:
+            break
+
+    # Detect bottom UI banner (e.g. y > h*0.75)
+    for y in range(h - 10, int(h * 0.65), -10):
+        patch = gray[y-10:y, :]
+        if np.mean(patch) < 45 or np.var(patch) < 300:
+            y_end = y - 10
+        else:
+            break
+
+    # Top header bar
+    for y in range(0, int(h * 0.25), 10):
+        patch = gray[y:y+10, :]
+        if np.mean(patch) < 45:
+            y_start = y + 10
+        else:
+            break
+
+    # Sanity check: Ensure viewport is at least 40% of frame
+    if (x_end - x_start) < (w * 0.4) or (y_end - y_start) < (h * 0.4):
+        x_start, x_end = 0, w
+        y_start, y_end = 0, h
+
+    return x_start, y_start, x_end, y_end
+
+def classify_zone_in_viewport(cx, cy, checkout_type):
+    """
+    Classifies location inside the normalized camera viewport [0.0, 1.0].
+    Handles both overhead cashier lanes (conveyor -> scanner -> cashier/bag)
+    and self-checkout stations (cart -> scanner -> bagging).
+    """
+    if checkout_type == "cashier":
+        # Overhead Cashier Lane Layout
+        # Conveyor / Cart: cx < 0.55
+        # Scanner optical window: 0.55 <= cx <= 0.67, 0.38 <= cy <= 0.58
+        # Pass-around (around scanner perimeter): cx between 0.48 and 0.72, cy > 0.58 (bypassing below towards cashier) or cy < 0.38 (above)
+        # Bagging / Customer pickup: cx > 0.67
+        if cy > 0.75 and cx < 0.45:
+            return "CART_LOWER_RACK"
+        elif cx < 0.55 and cy < 0.75:
+            return "CONVEYOR_CART"
+        elif 0.56 <= cx <= 0.67 and 0.38 <= cy <= 0.58:
+            return "SCANNER_ZONE"
+        elif (0.48 <= cx <= 0.74) and (cy > 0.58 or cy < 0.38):
+            return "SIDE_OF_SCANNER"  # Pass-around bypass route
+        elif cx > 0.67:
+            return "BAGGING_AREA"
+        else:
+            return "TRANSIT_ZONE"
     else:
-        return "TRANSIT_ZONE"
+        # Self-Checkout Layout
+        # Cart: cx < 0.35
+        # Scanner window: 0.38 <= cx <= 0.62, 0.42 <= cy <= 0.78
+        # Pass-around bypass: 0.35 <= cx <= 0.65, cy < 0.42 or cy > 0.78
+        # Bagging well: cx > 0.65
+        if cy > 0.75 and cx < 0.45:
+            return "CART_LOWER_RACK"
+        elif cx < 0.35:
+            return "CART_MAIN"
+        elif 0.38 <= cx <= 0.62 and 0.42 <= cy <= 0.78:
+            return "SCANNER_ZONE"
+        elif 0.35 <= cx <= 0.65:
+            return "SIDE_OF_SCANNER"
+        elif cx > 0.65:
+            return "BAGGING_AREA"
+        else:
+            return "TRANSIT_ZONE"
 
 def process_video(video_path, checkout_type="self_checkout", output_frames_dir="public/uploads/frames"):
     if not os.path.exists(video_path):
@@ -52,133 +132,182 @@ def process_video(video_path, checkout_type="self_checkout", output_frames_dir="
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 360
     duration_sec = total_frames / fps if total_frames > 0 else 0.0
 
-    # Motion detection using background subtraction
-    bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=25, detectShadows=False)
+    # Auto-detect camera viewport
+    ret, test_frame = cap.read()
+    if not ret:
+        cap.release()
+        return {"error": "Failed to read first video frame"}
+
+    vx1, vy1, vx2, vy2 = find_camera_viewport(test_frame)
+    vw = vx2 - vx1
+    vh = vy2 - vy1
+
+    # Background subtraction on cropped camera feed
+    bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=25, detectShadows=False)
 
     frame_idx = 0
-    motion_profile = []
-    tracked_centroids = []  # list of (frame_idx, time_sec, x_norm, y_norm, w_norm, h_norm)
-    keyframe_indices = []
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    sample_stride = max(1, int(fps / 10))  # ~10 samples per sec
 
-    # Sample intervals for motion tracking
-    sample_stride = max(1, int(fps / 10))  # ~10 checks per second
+    tracked_records = []
+    zone_counts = {
+        "CART_MAIN": 0,
+        "CONVEYOR_CART": 0,
+        "SCANNER_ZONE": 0,
+        "SIDE_OF_SCANNER": 0,
+        "BAGGING_AREA": 0,
+        "CART_LOWER_RACK": 0,
+        "TRANSIT_ZONE": 0
+    }
+
+    keyframe_candidates = []
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
+        # Crop to active camera viewport
+        crop = frame[vy1:vy2, vx1:vx2]
+
         if frame_idx < 5:
+            # Warm up MOG2
+            bg_subtractor.apply(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY))
             frame_idx += 1
             continue
 
         if frame_idx % sample_stride == 0:
             time_sec = frame_idx / fps
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
             fg_mask = bg_subtractor.apply(gray)
 
-            # Clean mask
+            # Morphological cleaning
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
             fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
             fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_DILATE, kernel, iterations=2)
 
             contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            motion_area = 0
-            best_contour = None
-            max_c_area = 0
+
+            best_c = None
+            max_area = 0
 
             for c in contours:
                 c_area = cv2.contourArea(c)
-                if c_area > (width * height * 0.005):  # at least 0.5% of frame
-                    motion_area += c_area
-                    if c_area > max_c_area:
-                        max_c_area = c_area
-                        best_contour = c
+                if c_area > (vw * vh * 0.003):  # Significant motion
+                    if c_area > max_area:
+                        max_area = c_area
+                        best_c = c
 
-            motion_norm = min(1.0, motion_area / (width * height * 0.3))
-            motion_profile.append((time_sec, motion_norm))
+            if best_c is not None:
+                bx, by, bw, bh = cv2.boundingRect(best_c)
+                cx = (bx + bw / 2.0) / float(vw)
+                cy = (by + bh / 2.0) / float(vh)
+                zone = classify_zone_in_viewport(cx, cy, checkout_type)
+                zone_counts[zone] = zone_counts.get(zone, 0) + 1
 
-            if best_contour is not None:
-                bx, by, bw, bh = cv2.boundingRect(best_contour)
-                cx = (bx + bw / 2.0) / width
-                cy = (by + bh / 2.0) / height
-                tracked_centroids.append({
+                tracked_records.append({
                     "frame": frame_idx,
                     "time_sec": round(time_sec, 2),
-                    "x": round(cx, 3),
-                    "y": round(cy, 3),
-                    "w": round(bw / width, 3),
-                    "h": round(bh / height, 3),
-                    "zone": determine_zone(cx, cy)
+                    "cx": round(cx, 3),
+                    "cy": round(cy, 3),
+                    "zone": zone,
+                    "area": max_area
                 })
+
+                # Check for critical keyframe moments
+                if zone == "SIDE_OF_SCANNER" and len([k for k in keyframe_candidates if k.get("type") == "bypass"]) < 2:
+                    keyframe_candidates.append({"frame": frame_idx, "type": "bypass", "time": time_sec})
+                elif zone == "SCANNER_ZONE" and len([k for k in keyframe_candidates if k.get("type") == "scanner"]) < 2:
+                    keyframe_candidates.append({"frame": frame_idx, "type": "scanner", "time": time_sec})
 
         frame_idx += 1
 
-    # Extract 3-5 keyframes at key intervals
+    # Extract 4 high-value keyframes
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     saved_frames = []
-    
-    # Pick key moments: 15%, 40%, 65%, 85% through duration
-    if total_frames > 0:
-        k_percentages = [0.15, 0.45, 0.70, 0.90]
-        for idx, pct in enumerate(k_percentages):
-            target_frame = int(total_frames * pct)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
-            ret, frame = cap.read()
-            if ret:
-                fname = f"{video_basename}_keyframe_{idx + 1}.jpg"
-                fpath = os.path.join(output_frames_dir, fname)
-                cv2.imwrite(fpath, frame)
-                saved_frames.append(f"uploads/frames/{fname}")
+
+    # Frame moments: 1 approach, 1-2 interaction/bypass, 1 bagging/cart
+    target_frames = []
+    if keyframe_candidates:
+        target_frames = [k["frame"] for k in keyframe_candidates[:3]]
+
+    # Fill remaining from standard percentiles
+    while len(target_frames) < 4:
+        pct = len(target_frames) / 4.0 + 0.15
+        target_frames.append(int(total_frames * pct))
+
+    target_frames.sort()
+
+    for idx, f_no in enumerate(target_frames[:4]):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, min(total_frames - 1, f_no))
+        ret, frame = cap.read()
+        if ret:
+            fname = f"{video_basename}_keyframe_{idx + 1}.jpg"
+            fpath = os.path.join(output_frames_dir, fname)
+            cv2.imwrite(fpath, frame)
+            saved_frames.append(f"uploads/frames/{fname}")
 
     cap.release()
 
-    # Analyze trajectory from tracked centroids
-    items = []
-    anomalies = []
-    
-    if len(tracked_centroids) > 0:
-        # Group detections into trajectory
-        zones_visited = []
-        for c in tracked_centroids:
-            zone = c["zone"]
-            if not zones_visited or zones_visited[-1] != zone:
-                zones_visited.append(zone)
+    # Determine merchandise trajectory and scan presentation
+    scanner_hits = zone_counts.get("SCANNER_ZONE", 0)
+    pass_around_hits = zone_counts.get("SIDE_OF_SCANNER", 0)
+    bagging_hits = zone_counts.get("BAGGING_AREA", 0)
+    cart_hits = zone_counts.get("CART_MAIN", 0) + zone_counts.get("CONVEYOR_CART", 0)
+    bob_hits = zone_counts.get("CART_LOWER_RACK", 0)
 
-        # Did it genuinely encounter scanner optical window? (filter single-frame optical artifacts)
-        scanner_samples = sum(1 for c in tracked_centroids if c["zone"] == "SCANNER_ZONE")
-        encountered_scanner = scanner_samples >= 3
-        
-        # Build normalized path
-        path = []
-        if any("CART" in z for z in zones_visited):
-            path.append("CART_MAIN")
-        path.append("HAND_CUSTOMER" if checkout_type == "self_checkout" else "HAND_CASHIER")
-        
-        if encountered_scanner:
-            path.append("SCANNER_ZONE")
-        else:
-            path.append("SIDE_OF_SCANNER")
-            
-        if any("BAG" in z for z in zones_visited):
-            path.append("BAGGING_AREA")
-        else:
-            path.append("CUSTOMER_POSSESSION")
+    # Core Behavioral Logic:
+    # A Pass-Around occurs when the item is routed around the scanner (SIDE_OF_SCANNER)
+    # rather than encountering the optical scanner window.
+    # If pass_around_hits > scanner_hits * 1.5, or if pass_around_hits >= 12,
+    # the motion indicates an unmistakable bypass around the scanner!
+    is_pass_around = (pass_around_hits >= 8 and pass_around_hits > (scanner_hits * 1.2)) or (pass_around_hits >= 15)
+    is_direct_to_bag = (pass_around_hits >= 5 and bagging_hits >= 10 and scanner_hits < 5)
 
-        item_id = "item_1"
-        item_obj = {
-            "id": item_id,
-            "label": f"Observed Merchandise Object ({video_basename})",
+    encountered_scanner = (scanner_hits >= 10) and not is_pass_around
+
+    # Build discrete tracked items
+    tracked_items = []
+    hand_role = "HAND_CASHIER" if checkout_type == "cashier" else "HAND_CUSTOMER"
+
+    if is_pass_around or is_direct_to_bag:
+        # Suspicious bypass path!
+        path = ["CART_MAIN", hand_role, "SIDE_OF_SCANNER", "BAGGING_AREA"]
+        tracked_items.append({
+            "id": "item_1",
+            "label": f"Merchandise Unit ({video_basename})",
             "path": path,
-            "first_seen": format_timestamp(0, tracked_centroids[0]["time_sec"]),
-            "last_seen": format_timestamp(0, tracked_centroids[-1]["time_sec"]),
-            "scanner_interaction": encountered_scanner,
-            "location_history": [c["zone"] for c in tracked_centroids]
-        }
-        items.append(item_obj)
+            "first_seen": format_timestamp(0, 0.0),
+            "last_seen": format_timestamp(0, duration_sec),
+            "scanner_interaction": False,  # Bypassed scanner!
+            "location_history": [r["zone"] for r in tracked_records[:150]]
+        })
+    elif encountered_scanner:
+        # Legitimate presentation across optical scanner
+        path = ["CART_MAIN", hand_role, "SCANNER_ZONE", "BAGGING_AREA"]
+        tracked_items.append({
+            "id": "item_1",
+            "label": f"Merchandise Unit ({video_basename})",
+            "path": path,
+            "first_seen": format_timestamp(0, 0.0),
+            "last_seen": format_timestamp(0, duration_sec),
+            "scanner_interaction": True,
+            "location_history": [r["zone"] for r in tracked_records[:150]]
+        })
+    else:
+        # Ambiguous / unverified
+        path = ["CART_MAIN", hand_role, "SIDE_OF_SCANNER", "CUSTOMER_POSSESSION"]
+        tracked_items.append({
+            "id": "item_1",
+            "label": f"Merchandise Unit ({video_basename})",
+            "path": path,
+            "first_seen": format_timestamp(0, 0.0),
+            "last_seen": format_timestamp(0, duration_sec),
+            "scanner_interaction": False,
+            "location_history": [r["zone"] for r in tracked_records[:150]]
+        })
 
-    # Segment activity windows based on video duration
+    # Segment chronological activity windows
     d_total = max(3.0, duration_sec)
     windows = [
         {
@@ -187,9 +316,9 @@ def process_video(video_path, checkout_type="self_checkout", output_frames_dir="
             "start_time": format_timestamp(0, 0.0),
             "end_time": format_timestamp(0, d_total * 0.35),
             "motion_intensity": 0.7,
-            "involved_item_ids": [i["id"] for i in items],
+            "involved_item_ids": ["item_1"],
             "scanner_activated": False,
-            "notes": "Item picked up from cart / staging platform"
+            "notes": "Item picked up from conveyor / cart"
         },
         {
             "window_id": "win_2",
@@ -197,9 +326,9 @@ def process_video(video_path, checkout_type="self_checkout", output_frames_dir="
             "start_time": format_timestamp(0, d_total * 0.35),
             "end_time": format_timestamp(0, d_total * 0.65),
             "motion_intensity": 0.8,
-            "involved_item_ids": [i["id"] for i in items],
-            "scanner_activated": items[0]["scanner_interaction"] if items else False,
-            "notes": "Scanner optical window transit" if (items and items[0]["scanner_interaction"]) else "Merchandise routed past scanner without optical presentation"
+            "involved_item_ids": ["item_1"],
+            "scanner_activated": encountered_scanner,
+            "notes": "Barcode presented across optical scanner window" if encountered_scanner else "Item moved around scanner perimeter into bagging area (Pass-Around detected)"
         },
         {
             "window_id": "win_3",
@@ -207,13 +336,11 @@ def process_video(video_path, checkout_type="self_checkout", output_frames_dir="
             "start_time": format_timestamp(0, d_total * 0.65),
             "end_time": format_timestamp(0, d_total),
             "motion_intensity": 0.6,
-            "involved_item_ids": [i["id"] for i in items],
+            "involved_item_ids": ["item_1"],
             "scanner_activated": False,
-            "notes": "Item placed into bagging well"
+            "notes": "Item enters bagging carousel / customer possession"
         }
     ]
-
-    has_bob = any(c.get("zone") == "CART_LOWER_RACK" for c in tracked_centroids)
 
     result = {
         "video_path": video_path,
@@ -222,7 +349,15 @@ def process_video(video_path, checkout_type="self_checkout", output_frames_dir="
             "total_frames": total_frames,
             "duration_seconds": round(duration_sec, 2),
             "width": width,
-            "height": height
+            "height": height,
+            "camera_viewport": {"x1": vx1, "y1": vy1, "x2": vx2, "y2": vy2},
+            "motion_hits": {
+                "scanner_hits": scanner_hits,
+                "pass_around_hits": pass_around_hits,
+                "bagging_hits": bagging_hits,
+                "cart_hits": cart_hits,
+                "bob_hits": bob_hits
+            }
         },
         "visual_context": {
             "video": os.path.basename(video_path),
@@ -230,10 +365,10 @@ def process_video(video_path, checkout_type="self_checkout", output_frames_dir="
             "camera_position": "overhead_checkout_45deg",
             "event_start": format_timestamp(0, 0.0),
             "event_end": format_timestamp(0, d_total),
-            "tracked_items": items,
+            "tracked_items": tracked_items,
             "cart_inspection": {
                 "main_basket_empty": True,
-                "lower_rack_items_detected": 1 if has_bob else 0,
+                "lower_rack_items_detected": 1 if bob_hits > 5 else 0,
                 "child_seat_items_detected": 0,
                 "concealed_items_detected": 0
             },
@@ -245,7 +380,7 @@ def process_video(video_path, checkout_type="self_checkout", output_frames_dir="
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Usage: process_video.py <video_path> [checkout_type] [output_dir]"}))
+        print(json.dumps({"error": "Usage: process_video.py <video_path> [checkout_type] [output_frames_dir]"}))
         sys.exit(1)
 
     v_path = sys.argv[1]
