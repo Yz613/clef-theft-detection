@@ -566,6 +566,24 @@ function renderEmptyWorkspace() {
   prioBadge.className = 'status-pill score-low';
   const typeBadge = document.getElementById('heroCheckoutTypeBadge');
   typeBadge.textContent = 'AWAITING VIDEO';
+  const autoLaneBadge = document.getElementById('heroAutoLaneBadge');
+  if (autoLaneBadge) autoLaneBadge.textContent = 'AUTO-DETECT';
+
+  const theftBanner = document.getElementById('heroTheftAlertBanner');
+  if (theftBanner) theftBanner.innerHTML = '';
+
+  const theftCountBadge = document.getElementById('multiTheftCountBadge');
+  if (theftCountBadge) {
+    theftCountBadge.textContent = '0 DETECTED';
+    theftCountBadge.className = 'status-pill score-low';
+  }
+
+  const laneExpl = document.getElementById('laneTypeExplanationText');
+  if (laneExpl) laneExpl.textContent = 'Lane: Awaiting Ingestion...';
+
+  const grid = document.getElementById('retailerTheftGrid');
+  if (grid) grid.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 16px; text-align: center; grid-column: 1 / -1;">No video loaded. Upload a video above to auto-detect lane and evaluate the 8 theft categories.</div>';
+
   document.getElementById('heroStoreLane').textContent = 'Lane: -- | Store: --';
   document.getElementById('heroTimestamp').textContent = 'Awaiting Ingestion';
   document.getElementById('heroPosStatus').textContent = 'Phase 1 Ready';
@@ -606,7 +624,53 @@ function renderCurrentEvent(item) {
   }`;
 
   const typeBadge = document.getElementById('heroCheckoutTypeBadge');
-  typeBadge.textContent = ev.checkout_type === 'cashier' ? 'CASHIER LANE' : 'SELF CHECKOUT';
+  const isCashier = ev.checkout_type === 'cashier' || ev.detected_checkout_type === 'cashier';
+  typeBadge.textContent = isCashier ? 'MANNED CASHIER LANE' : 'SELF-CHECKOUT (SCO)';
+
+  const autoLaneBadge = document.getElementById('heroAutoLaneBadge');
+  if (autoLaneBadge) {
+    const conf = Math.round((ev.checkout_type_confidence || 0.95) * 100);
+    autoLaneBadge.textContent = `AUTO: ${isCashier ? 'MANNED' : 'SCO'} (${conf}%)`;
+    autoLaneBadge.className = 'status-pill score-medium';
+  }
+
+  const laneExpl = document.getElementById('laneTypeExplanationText');
+  if (laneExpl) {
+    laneExpl.textContent = ev.lane_classification_evidence || 'Automated Station Geometry Classification';
+  }
+
+  // Render Multi-Theft Notification Banner
+  const theftBanner = document.getElementById('heroTheftAlertBanner');
+  const detectedThefts = ev.detected_theft_types || [];
+  const theftCountBadge = document.getElementById('multiTheftCountBadge');
+  if (theftCountBadge) {
+    theftCountBadge.textContent = `${detectedThefts.length} DETECTED`;
+    theftCountBadge.className = `status-pill ${detectedThefts.length > 0 ? 'score-critical' : 'score-low'}`;
+  }
+
+  if (theftBanner) {
+    if (detectedThefts.length > 1) {
+      theftBanner.innerHTML = `
+        <span class="status-pill score-critical" style="font-size: 0.82rem; font-weight: 700; padding: 4px 10px;">
+          🚨 MULTIPLE THEFTS DETECTED (${detectedThefts.length})
+        </span>
+        ${detectedThefts.map((t) => `<span class="status-pill score-high" style="font-size: 0.78rem;">${t}</span>`).join('')}
+      `;
+    } else if (detectedThefts.length === 1) {
+      theftBanner.innerHTML = `
+        <span class="status-pill score-critical" style="font-size: 0.82rem; font-weight: 700; padding: 4px 10px;">
+          ⚠️ THEFT DETECTED
+        </span>
+        <span class="status-pill score-high" style="font-size: 0.78rem;">${detectedThefts[0]}</span>
+      `;
+    } else {
+      theftBanner.innerHTML = `
+        <span class="status-pill score-low" style="font-size: 0.82rem; font-weight: 700; padding: 4px 10px; background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4);">
+          ✅ CLEAN TRANSACTION — ZERO SHRINK DETECTED
+        </span>
+      `;
+    }
+  }
 
   document.getElementById('heroStoreLane').textContent = `Lane: ${ev.lane_id || 'SCO-01'} | Store: ${ev.store_id || 'Store 104'}`;
   document.getElementById('heroTimestamp').textContent = `Observed: ${ev.timestamp}`;
@@ -626,6 +690,9 @@ function renderCurrentEvent(item) {
 
   // Primary behavior badge
   document.getElementById('primaryBehaviorBadge').textContent = `Primary: ${ev.observable_behavior.primary_behavior}`;
+
+  // Render Retailer 8-Theft Categories Grid
+  renderRetailerTheftGrid(ev);
 
   // Behavior Probabilities List
   renderBehaviorProbabilities(ev);
@@ -658,6 +725,66 @@ function renderCurrentEvent(item) {
     // Suggest default label based on highest probability
     suggestLabelFromEvent(ev);
   }
+}
+
+function renderRetailerTheftGrid(ev) {
+  const grid = document.getElementById('retailerTheftGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const summary = ev.retailer_theft_summary;
+  if (!summary || !summary.categories) {
+    grid.innerHTML = '<span style="color:var(--text-dim); font-size:0.85rem; grid-column: 1 / -1; padding: 12px; text-align: center;">No retailer category metrics available.</span>';
+    return;
+  }
+
+  const icons = {
+    non_scan: '🚫',
+    left_in_cart: '🛒',
+    no_sale: '💵',
+    price_lookup_abuse: '🏷️',
+    suspicious_refund: '🔄',
+    canceled_transaction: '❌',
+    inventory_loss: '📦',
+    late_night_food_prep: '🍕',
+  };
+
+  Object.values(summary.categories).forEach((cat) => {
+    const pct = Math.round(cat.probability * 100);
+    const isDet = cat.detected;
+    const card = document.createElement('div');
+    card.style.padding = '12px 14px';
+    card.style.background = isDet ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.03)';
+    card.style.border = isDet ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid rgba(255, 255, 255, 0.07)';
+    card.style.borderRadius = 'var(--radius-md)';
+    card.style.transition = 'all 0.2s ease';
+
+    const color = isDet ? 'var(--danger)' : pct >= 30 ? 'var(--warning)' : 'var(--success)';
+    const badgeClass = isDet ? 'score-critical' : 'score-low';
+    const badgeText = isDet ? 'DETECTED' : 'CLEAR';
+    const icon = icons[cat.key] || '⚠️';
+
+    card.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span style="font-size: 0.88rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
+          <span>${icon}</span>
+          <span>${cat.label}</span>
+        </span>
+        <span class="status-pill ${badgeClass}" style="font-size: 0.68rem; padding: 2px 7px;">${badgeText}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-bottom: 4px;">
+        <span style="color: var(--text-muted);">Estimated Probability</span>
+        <span style="font-weight: 700; color: ${color}; font-family: var(--font-mono);">${pct}%</span>
+      </div>
+      <div class="prob-meter-bg" style="height: 6px; margin-bottom: 8px;">
+        <div class="prob-meter-fill" style="width: ${pct}%; background: ${color};"></div>
+      </div>
+      <div style="font-size: 0.74rem; color: var(--text-dim); line-height: 1.35;">
+        ${cat.evidence}
+      </div>
+    `;
+    grid.appendChild(card);
+  });
 }
 
 function renderBehaviorProbabilities(ev) {
@@ -848,17 +975,51 @@ function suggestLabelForDecision(decision) {
 
 function suggestLabelFromEvent(ev) {
   const select = document.getElementById('reviewLabelSelect');
-  const prim = ev.observable_behavior.primary_behavior.toLowerCase();
+  const detected = ev.detected_theft_types || [];
 
-  if (prim.includes('skip scan')) select.value = 'confirmed_skip_scan';
-  else if (prim.includes('fake scan')) select.value = 'confirmed_fake_scan';
-  else if (prim.includes('sweethearting')) select.value = 'confirmed_sweethearting';
-  else if (prim.includes('quantity')) select.value = 'confirmed_quantity_error';
-  else if (prim.includes('bottom-of-basket') || prim.includes('bob')) select.value = 'confirmed_bob';
-  else if (prim.includes('plu')) select.value = 'confirmed_plu_fraud';
-  else if (prim.includes('walk-off') || prim.includes('walkoff')) select.value = 'confirmed_walkoff';
-  else if (prim.includes('void')) select.value = 'confirmed_void_abuse';
-  else select.value = 'confirmed_other_loss';
+  if (detected.length === 0 && ev.overall_shrink_probability < 0.35) {
+    select.value = 'not_loss';
+    return;
+  }
+
+  if (detected.includes('Non-Scan')) {
+    select.value = 'non_scan';
+    return;
+  }
+  if (detected.includes('Left in Cart')) {
+    select.value = 'left_in_cart';
+    return;
+  }
+  if (detected.includes('Inventory Loss')) {
+    select.value = 'inventory_loss';
+    return;
+  }
+  if (detected.includes('Price Look-Up Abuse')) {
+    select.value = 'price_lookup_abuse';
+    return;
+  }
+  if (detected.includes('No Sale')) {
+    select.value = 'no_sale';
+    return;
+  }
+  if (detected.includes('Suspicious Refund')) {
+    select.value = 'suspicious_refund';
+    return;
+  }
+  if (detected.includes('Canceled Transaction')) {
+    select.value = 'canceled_transaction';
+    return;
+  }
+  if (detected.includes('Late Night Food Prep')) {
+    select.value = 'late_night_food_prep';
+    return;
+  }
+
+  const prim = (ev.observable_behavior?.primary_behavior || '').toLowerCase();
+  if (prim.includes('skip scan') || prim.includes('pass-around') || prim.includes('fake scan')) select.value = 'non_scan';
+  else if (prim.includes('bottom-of-basket') || prim.includes('cart')) select.value = 'left_in_cart';
+  else if (prim.includes('plu')) select.value = 'price_lookup_abuse';
+  else select.value = 'inventory_loss';
 }
 
 function openClipModal() {

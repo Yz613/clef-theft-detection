@@ -6,9 +6,9 @@ const __dirname = path.dirname(__filename);
 export class VideoProcessor {
     /**
      * Invokes Python OpenCV script to extract activity windows,
-     * item trajectories, and keyframes from a real video file.
+     * item trajectories, keyframes, lane type, and retailer theft classifications.
      */
-    static async processVideo(videoPath, checkoutType = 'self_checkout', outputFramesDir = 'public/uploads/frames') {
+    static async processVideo(videoPath, checkoutType = 'auto', outputFramesDir = 'public/uploads/frames') {
         const scriptPath = path.resolve(__dirname, '../../scripts/process_video.py');
         const absVideoPath = path.resolve(videoPath);
         const absFramesDir = path.resolve(outputFramesDir);

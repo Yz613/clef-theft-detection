@@ -2,7 +2,31 @@
  * Core Type Definitions for Clef Grocery Checkout Shrink Detection
  */
 
-export type CheckoutType = 'cashier' | 'self_checkout';
+export type CheckoutType = 'cashier' | 'self_checkout' | 'auto';
+
+export type RetailerTheftCategory =
+  | 'non_scan'
+  | 'left_in_cart'
+  | 'no_sale'
+  | 'price_lookup_abuse'
+  | 'suspicious_refund'
+  | 'canceled_transaction'
+  | 'inventory_loss'
+  | 'late_night_food_prep';
+
+export interface RetailerTheftDetection {
+  key: RetailerTheftCategory;
+  label: string;
+  detected: boolean;
+  probability: number;
+  evidence: string;
+}
+
+export interface RetailerTheftSummary {
+  theft_count: number;
+  detected_thefts: string[];
+  categories: Record<RetailerTheftCategory, RetailerTheftDetection>;
+}
 
 export type ReviewPriority = 'low' | 'medium' | 'high' | 'critical';
 
@@ -62,6 +86,19 @@ export interface RealCvMetrics {
   motion_intensity: number;
   pass_around_hits: number;
   scanner_hits: number;
+  detected_lane_type?: 'cashier' | 'self_checkout';
+  lane_confidence?: number;
+  lane_evidence?: string;
+  retailer_theft_metrics?: {
+    non_scan: number;
+    left_in_cart: number;
+    no_sale: number;
+    price_lookup_abuse: number;
+    suspicious_refund: number;
+    canceled_transaction: number;
+    inventory_loss: number;
+    late_night_food_prep: number;
+  };
 }
 
 export interface VisualContext {
@@ -274,6 +311,15 @@ export interface CheckoutEventOutput {
     reason: string;
     flagged_items: string[];
   };
+
+  // Auto-detected Lane Classification
+  detected_checkout_type: 'cashier' | 'self_checkout';
+  checkout_type_confidence: number;
+  lane_classification_evidence: string;
+
+  // Retailer 8-Category Multi-Theft Detections
+  detected_theft_types: string[];
+  retailer_theft_summary: RetailerTheftSummary;
 }
 
 /**
@@ -287,6 +333,14 @@ export type HumanReviewDecision =
   | 'unclear';
 
 export type HumanReviewLabel =
+  | 'non_scan'
+  | 'left_in_cart'
+  | 'no_sale'
+  | 'price_lookup_abuse'
+  | 'suspicious_refund'
+  | 'canceled_transaction'
+  | 'inventory_loss'
+  | 'late_night_food_prep'
   | 'confirmed_skip_scan'
   | 'confirmed_fake_scan'
   | 'confirmed_sweethearting'

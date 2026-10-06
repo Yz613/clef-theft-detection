@@ -71,12 +71,13 @@ export function createServer(service) {
             if (!req.file) {
                 return res.status(400).json({ error: 'No video file uploaded' });
             }
-            const checkoutType = req.body.checkout_type || 'self_checkout';
-            const laneId = req.body.lane_id || (checkoutType === 'cashier' ? 'lane_02' : 'sco_03');
+            const checkoutType = req.body.checkout_type || 'auto';
             const storeId = req.body.store_id || 'store_104';
-            console.log(`[VideoUpload] Processing uploaded video: ${req.file.path} (${checkoutType})`);
-            // Run OpenCV CV pipeline
+            console.log(`[VideoUpload] Processing uploaded video: ${req.file.path} (requested type: ${checkoutType})`);
+            // Run OpenCV CV pipeline (with auto lane detection and 8 retailer theft categories)
             const cvResult = await VideoProcessor.processVideo(req.file.path, checkoutType, framesDir);
+            const resolvedType = checkoutType === 'auto' ? cvResult.detected_checkout_type : checkoutType;
+            const laneId = req.body.lane_id || (resolvedType === 'cashier' ? 'lane_02' : 'sco_03');
             const eventId = `evt_real_${Date.now().toString(36)}`;
             const videoRelativeUrl = `/uploads/videos/${req.file.filename}`;
             // Assemble inference input
@@ -84,7 +85,7 @@ export function createServer(service) {
                 event_id: eventId,
                 store_id: storeId,
                 lane_id: laneId,
-                checkout_type: checkoutType,
+                checkout_type: resolvedType,
                 visual_context: {
                     ...cvResult.visual_context,
                     video: videoRelativeUrl,
@@ -109,20 +110,21 @@ export function createServer(service) {
     app.post('/api/process-sample-video', async (req, res) => {
         try {
             const { sample_id, checkout_type } = req.body;
-            const cType = checkout_type || (sample_id.includes('cashier') ? 'cashier' : 'self_checkout');
+            const cType = checkout_type || 'auto';
             const videoPath = path.resolve(__dirname, `../../public/samples/${sample_id}.mp4`);
             if (!fs.existsSync(videoPath)) {
                 return res.status(404).json({ error: `Sample video not found: ${sample_id}.mp4` });
             }
             console.log(`[SampleVideo] Processing sample video: ${videoPath} (${cType})`);
             const cvResult = await VideoProcessor.processVideo(videoPath, cType, framesDir);
+            const resolvedType = cType === 'auto' ? cvResult.detected_checkout_type : cType;
             const eventId = `evt_${sample_id}_${Date.now().toString(36)}`;
             const videoRelativeUrl = `/samples/${sample_id}.mp4`;
             const inferenceInput = {
                 event_id: eventId,
                 store_id: 'store_104',
-                lane_id: cType === 'cashier' ? 'cashier_01' : 'sco_02',
-                checkout_type: cType,
+                lane_id: resolvedType === 'cashier' ? 'cashier_01' : 'sco_02',
+                checkout_type: resolvedType,
                 visual_context: {
                     ...cvResult.visual_context,
                     video: videoRelativeUrl,

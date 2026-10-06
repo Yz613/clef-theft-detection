@@ -51,6 +51,19 @@ export interface FormattedClefState {
             motion_intensity: number;
             pass_around_hits: number;
             scanner_hits: number;
+            detected_lane_type?: 'cashier' | 'self_checkout';
+            lane_confidence?: number;
+            lane_evidence?: string;
+            retailer_theft_metrics?: {
+                non_scan: number;
+                left_in_cart: number;
+                no_sale: number;
+                price_lookup_abuse: number;
+                suspicious_refund: number;
+                canceled_transaction: number;
+                inventory_loss: number;
+                late_night_food_prep: number;
+            };
         };
     };
     narrative_context: string;

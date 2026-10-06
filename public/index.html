@@ -79,8 +79,9 @@
           </label>
           <div style="display: flex; gap: 8px; align-items: center;">
             <select id="uploadCheckoutType" class="select-scenario" style="padding: 7px 10px;">
-              <option value="self_checkout">Self-Checkout (SCO)</option>
-              <option value="cashier">Cashier Lane</option>
+              <option value="auto">✨ Auto-Detect Lane (SCO vs Manned)</option>
+              <option value="cashier">Manned Cashier Lane (Manual Override)</option>
+              <option value="self_checkout">Self-Checkout SCO (Manual Override)</option>
             </select>
             <button id="uploadAndAnalyzeBtn" class="btn btn-primary" style="white-space: nowrap;">
               Analyze Video with Clef
@@ -127,13 +128,18 @@
             <span id="heroEventId">evt_loading</span>
             <span id="heroPriorityBadge" class="status-pill score-high">HIGH</span>
             <span id="heroCheckoutTypeBadge" class="status-pill source-visual">SELF CHECKOUT</span>
+            <span id="heroAutoLaneBadge" class="status-pill score-medium" style="font-size: 0.72rem;">AUTO-DETECTED</span>
           </h2>
           <div class="hero-sub">
             <span id="heroStoreLane">Lane: -- | Store: --</span>
             <span id="heroTimestamp">Time: --</span>
             <span id="heroPosStatus">POS: Visual Only</span>
           </div>
-          <p id="heroExplanation" style="margin-top: 10px; font-size: 0.92rem; color: var(--text-muted); line-height: 1.4;">
+          <!-- Multi-Theft Notification Banner -->
+          <div id="heroTheftAlertBanner" style="margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <!-- Rendered dynamically -->
+          </div>
+          <p id="heroExplanation" style="margin-top: 8px; font-size: 0.92rem; color: var(--text-muted); line-height: 1.4;">
             Evaluating checkout event...
           </p>
         </div>
@@ -151,6 +157,22 @@
             <span id="gaugeQuality" class="gauge-val" style="color: #38bdf8;">--%</span>
             <span class="gauge-label">Evidence Quality</span>
           </div>
+        </div>
+      </div>
+
+      <!-- Retailer 8-Theft Categories Multi-Label Grid -->
+      <div class="card-glass" style="margin-bottom: 14px;">
+        <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span>🛡️ Retailer Theft Taxonomy (8 Auto-Detections)</span>
+            <span id="multiTheftCountBadge" class="status-pill score-medium" style="font-size: 0.72rem;">0 DETECTED</span>
+          </div>
+          <span id="laneTypeExplanationText" style="font-size: 0.78rem; color: var(--text-muted); font-family: var(--font-mono);">
+            Lane: Auto-Detecting...
+          </span>
+        </div>
+        <div id="retailerTheftGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 10px;">
+          <!-- 8 Categories dynamically populated -->
         </div>
       </div>
 
@@ -219,20 +241,17 @@
           <div class="form-group">
             <label class="form-label" for="reviewLabelSelect">Human Review Outcome Label</label>
             <select id="reviewLabelSelect" class="form-control">
-              <option value="confirmed_skip_scan">confirmed_skip_scan</option>
-              <option value="confirmed_fake_scan">confirmed_fake_scan</option>
-              <option value="confirmed_sweethearting">confirmed_sweethearting</option>
-              <option value="confirmed_quantity_error">confirmed_quantity_error</option>
-              <option value="confirmed_bob">confirmed_bob</option>
-              <option value="confirmed_barcode_switch">confirmed_barcode_switch</option>
-              <option value="confirmed_plu_fraud">confirmed_plu_fraud</option>
-              <option value="confirmed_walkoff">confirmed_walkoff</option>
-              <option value="confirmed_void_abuse">confirmed_void_abuse</option>
-              <option value="confirmed_other_loss">confirmed_other_loss</option>
-              <option value="accidental_miss">accidental_miss</option>
-              <option value="operational_error">operational_error</option>
-              <option value="not_loss">not_loss</option>
-              <option value="insufficient_evidence">insufficient_evidence</option>
+              <option value="non_scan">Non-Scan</option>
+              <option value="left_in_cart">Left in Cart</option>
+              <option value="no_sale">No Sale</option>
+              <option value="price_lookup_abuse">Price Look-Up Abuse</option>
+              <option value="suspicious_refund">Suspicious Refund</option>
+              <option value="canceled_transaction">Canceled Transaction</option>
+              <option value="inventory_loss">Inventory Loss</option>
+              <option value="late_night_food_prep">Late Night Food Prep</option>
+              <option value="not_loss">No Loss (Clean Transaction)</option>
+              <option value="operational_error">Operational Error</option>
+              <option value="insufficient_evidence">Insufficient Evidence</option>
             </select>
           </div>
 
