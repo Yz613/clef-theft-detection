@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clef Grocery Checkout Shrink Detection</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-logo">C</div>
+      <div class="brand-text">
+        <h1>Clef Shrink Detection <span class="model-badge">@cf/cloudflare/clef</span></h1>
+        <p>Probabilistic Grocery Checkout Loss Decision Service</p>
+      </div>
+    </div>
+    <div class="header-controls">
+      <select id="scenarioSelect" class="select-scenario" aria-label="Select benchmark scenario">
+        <option value="">-- Load Scenario --</option>
+      </select>
+      <button id="runScenarioBtn" class="btn btn-primary">Run Scenario</button>
+      <button id="viewRawJsonBtn" class="btn btn-outline">Inspect Clef Payload</button>
+    </div>
+  </header>
+
+  <main class="app-container">
+    <!-- Left Sidebar: Event Queue -->
+    <aside class="queue-sidebar">
+      <div class="sidebar-title">
+        <span>Review Queue</span>
+        <span id="queueCount" class="badge-count">0 items</span>
+      </div>
+      <div id="queueList" class="queue-list" role="list">
+        <!-- Rendered dynamically -->
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <section class="main-workspace">
+      <!-- Event Hero Banner -->
+      <div class="card-glass event-hero">
+        <div class="hero-meta">
+          <h2 id="heroEventTitle">
+            <span id="heroEventId">evt_loading</span>
+            <span id="heroPriorityBadge" class="status-pill score-high">HIGH</span>
+            <span id="heroCheckoutTypeBadge" class="status-pill source-visual">SELF CHECKOUT</span>
+          </h2>
+          <div class="hero-sub">
+            <span id="heroStoreLane">Lane: -- | Store: --</span>
+            <span id="heroTimestamp">Time: --</span>
+            <span id="heroPosStatus">POS: Visual Only</span>
+          </div>
+          <p id="heroExplanation" style="margin-top: 10px; font-size: 0.92rem; color: var(--text-muted); line-height: 1.4;">
+            Evaluating checkout event...
+          </p>
+        </div>
+
+        <div class="hero-gauges">
+          <div class="gauge-box">
+            <span id="gaugeLossLikelihood" class="gauge-val" style="color: var(--danger);">--%</span>
+            <span class="gauge-label">Overall Loss</span>
+          </div>
+          <div class="gauge-box">
+            <span id="gaugeIntent" class="gauge-val" style="color: #fb923c;">--%</span>
+            <span class="gauge-label">Intentional</span>
+          </div>
+          <div class="gauge-box">
+            <span id="gaugeQuality" class="gauge-val" style="color: #38bdf8;">--%</span>
+            <span class="gauge-label">Evidence Quality</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Two-column workspace -->
+      <div class="workspace-columns">
+        <!-- Left: Observable Behavior Breakdown & Trajectories -->
+        <div class="card-glass">
+          <div class="section-title">
+            <span>Observable Behavior Probabilities</span>
+            <span id="primaryBehaviorBadge" style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">
+              Primary: Detecting...
+            </span>
+          </div>
+
+          <div id="behaviorProbList" class="prob-list">
+            <!-- Rendered dynamically -->
+          </div>
+
+          <!-- Trajectory Visualizer -->
+          <div class="trajectory-card">
+            <div style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); display: flex; justify-content: space-between;">
+              <span>Merchandise Trajectory Analysis</span>
+              <span id="trajectoryAnomaliesCount" style="color: var(--danger);">--</span>
+            </div>
+            <div id="trajectoryPathContainer" class="trajectory-path">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Chronological Timeline -->
+        <div class="card-glass">
+          <div class="section-title">
+            <span>Event Timeline</span>
+            <button id="viewClipBtn" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.78rem;">
+              🎥 View Clip
+            </button>
+          </div>
+          <div id="timelineList" class="timeline-container">
+            <!-- Timeline items rendered dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Reviewer Controls (The exact action buttons & labels from specification) -->
+      <div class="card-glass review-actions-card">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h3 style="font-size: 1rem; font-weight: 700;">Human Loss Prevention Review</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">Evaluate observable behavior, transaction mismatch, and intent</p>
+          </div>
+          <span id="currentReviewStatus" class="status-pill score-medium">PENDING REVIEW</span>
+        </div>
+
+        <!-- Action Decision Buttons -->
+        <div class="action-buttons-group">
+          <button type="button" class="btn-decision btn-confirmed-loss" data-decision="confirmed_loss">Confirmed Loss</button>
+          <button type="button" class="btn-decision btn-probably-loss" data-decision="probably_loss">Probably Loss</button>
+          <button type="button" class="btn-decision btn-operational-error" data-decision="operational_error">Operational Error</button>
+          <button type="button" class="btn-decision btn-no-loss" data-decision="no_loss">No Loss</button>
+          <button type="button" class="btn-decision btn-unclear" data-decision="unclear">Unclear</button>
+        </div>
+
+        <!-- Detailed Review Form -->
+        <div class="review-form-grid">
+          <div class="form-group">
+            <label class="form-label" for="reviewLabelSelect">Human Review Outcome Label</label>
+            <select id="reviewLabelSelect" class="form-control">
+              <option value="confirmed_skip_scan">confirmed_skip_scan</option>
+              <option value="confirmed_fake_scan">confirmed_fake_scan</option>
+              <option value="confirmed_sweethearting">confirmed_sweethearting</option>
+              <option value="confirmed_quantity_error">confirmed_quantity_error</option>
+              <option value="confirmed_bob">confirmed_bob</option>
+              <option value="confirmed_barcode_switch">confirmed_barcode_switch</option>
+              <option value="confirmed_plu_fraud">confirmed_plu_fraud</option>
+              <option value="confirmed_walkoff">confirmed_walkoff</option>
+              <option value="confirmed_void_abuse">confirmed_void_abuse</option>
+              <option value="confirmed_other_loss">confirmed_other_loss</option>
+              <option value="accidental_miss">accidental_miss</option>
+              <option value="operational_error">operational_error</option>
+              <option value="not_loss">not_loss</option>
+              <option value="insufficient_evidence">insufficient_evidence</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reviewerIdInput">Reviewer Identifier</label>
+            <input id="reviewerIdInput" class="form-control" type="text" value="analyst_jane_01">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="reviewerNotesInput">Reviewer Field Notes</label>
+          <input id="reviewerNotesInput" class="form-control" type="text" placeholder="e.g. Verified detergent bypassed scanner directly into shopping bag.">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button id="submitReviewBtn" class="btn btn-primary" style="padding: 10px 24px;">Submit Decision</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Video Clip Simulation Dialog -->
+  <dialog id="clipDialog">
+    <div class="modal-header">
+      <h3 id="clipModalTitle">Checkout Video Evidence Clip</h3>
+      <button type="button" class="btn btn-outline" id="closeClipBtn" style="padding: 4px 8px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="video-sim-box">
+        <canvas id="clipCanvas" class="video-sim-canvas" width="640" height="360"></canvas>
+        <div id="clipOverlayTime" class="video-overlay-text">14:03:20 | OVERHEAD_45DEG_SCANNER</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted);">
+        <span id="clipFrameLabel">Event Window: Scanner Approach → Interaction → Bagging</span>
+        <button id="playPauseSimBtn" class="btn btn-outline" style="padding: 2px 10px;">Replay Motion</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-primary" id="confirmClipDoneBtn">Done Viewing</button>
+    </div>
+  </dialog>
+
+  <!-- Raw Clef JSON Dialog -->
+  <dialog id="jsonDialog">
+    <div class="modal-header">
+      <h3>Clef Decision State & System One Answers</h3>
+      <button type="button" class="btn btn-outline" id="closeJsonBtn" style="padding: 4px 8px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <pre id="rawJsonViewer" class="json-box"></pre>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-primary" id="copyJsonBtn">Copy JSON</button>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
