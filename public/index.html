@@ -17,7 +17,7 @@
     </div>
     <div class="header-controls">
       <select id="scenarioSelect" class="select-scenario" aria-label="Select benchmark scenario">
-        <option value="">-- Load Scenario --</option>
+        <option value="">-- Load Benchmark Scenario --</option>
       </select>
       <button id="runScenarioBtn" class="btn btn-primary">Run Scenario</button>
       <button id="viewRawJsonBtn" class="btn btn-outline">Inspect Clef Payload</button>
@@ -38,6 +38,80 @@
 
     <!-- Main Workspace -->
     <section class="main-workspace">
+      <!-- Real Video Upload & Live Testing Bar -->
+      <div class="card-glass real-video-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h3 style="font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+              <span>📹 Real Checkout Video Ingestion & Testing</span>
+              <span class="status-pill score-high" style="font-size: 0.7rem;">OPENCV + CLEF</span>
+            </h3>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">
+              Upload real checkout video footage or run pre-rendered real MP4 videos through the CV trajectory tracker & Clef.
+            </p>
+          </div>
+          <div class="sample-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button id="sampleSkipScanBtn" class="btn btn-outline" style="font-size: 0.8rem; border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">
+              ▶ Real Skip Scan (MP4)
+            </button>
+            <button id="sampleLegitScanBtn" class="btn btn-outline" style="font-size: 0.8rem; border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7;">
+              ▶ Real Clean Scan (MP4)
+            </button>
+            <button id="sampleBobBtn" class="btn btn-outline" style="font-size: 0.8rem; border-color: rgba(245, 158, 11, 0.4); color: #fcd34d;">
+              ▶ Real BOB Water Case (MP4)
+            </button>
+          </div>
+        </div>
+
+        <!-- Video Upload Form -->
+        <div class="upload-controls-row">
+          <label class="drop-zone" id="dropZone">
+            <span id="dropZoneText">📁 Drop real video here (.mp4, .mov, .webm) or click to browse</span>
+            <input type="file" id="videoFileInput" accept="video/mp4,video/quicktime,video/webm" style="display: none;">
+          </label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select id="uploadCheckoutType" class="select-scenario" style="padding: 7px 10px;">
+              <option value="self_checkout">Self-Checkout (SCO)</option>
+              <option value="cashier">Cashier Lane</option>
+            </select>
+            <button id="uploadAndAnalyzeBtn" class="btn btn-primary" style="white-space: nowrap;">
+              Analyze Video with Clef
+            </button>
+            <button id="recordWebcamBtn" class="btn btn-outline" style="white-space: nowrap;">
+              🎥 Record Webcam
+            </button>
+          </div>
+        </div>
+        <div id="uploadProgressText" style="display: none; font-size: 0.8rem; color: #38bdf8; margin-top: 6px;">
+          ⏳ Uploading video & running OpenCV motion segmentation and Clef inference...
+        </div>
+      </div>
+
+      <!-- Real Video Player & Keyframe Gallery Card -->
+      <div id="realVideoPlayerCard" class="card-glass" style="display: none;">
+        <div class="section-title">
+          <span id="videoPlayerTitle">📹 Real Checkout Video Footage</span>
+          <span id="videoMetaBadge" style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted);">0.0s | 30 FPS</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 260px; gap: 14px; align-items: start;">
+          <div>
+            <video id="realVideoPlayer" controls playsinline style="width: 100%; border-radius: var(--radius-md); background: #000; max-height: 380px;"></video>
+            <div style="font-size: 0.78rem; color: var(--text-dim); margin-top: 4px; display: flex; justify-content: space-between;">
+              <span>💡 Click any timeline item below to jump video playback to that exact second.</span>
+              <span id="videoPlaybackTime">00:00 / 00:00</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">
+              Extracted Keyframes
+            </div>
+            <div id="keyframesContainer" style="display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto;">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Event Hero Banner -->
       <div class="card-glass event-hero">
         <div class="hero-meta">
@@ -104,7 +178,7 @@
           <div class="section-title">
             <span>Event Timeline</span>
             <button id="viewClipBtn" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.78rem;">
-              🎥 View Clip
+              🎥 Trajectory Simulator
             </button>
           </div>
           <div id="timelineList" class="timeline-container">
@@ -190,6 +264,26 @@
     </div>
     <div class="modal-footer">
       <button type="button" class="btn btn-primary" id="confirmClipDoneBtn">Done Viewing</button>
+    </div>
+  </dialog>
+
+  <!-- Webcam Recording Dialog -->
+  <dialog id="webcamDialog">
+    <div class="modal-header">
+      <h3>Record Test Checkout Video</h3>
+      <button type="button" class="btn btn-outline" id="closeWebcamBtn" style="padding: 4px 8px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="video-sim-box">
+        <video id="webcamLiveVideo" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover;"></video>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
+        <span id="recordCountdownText" style="color: var(--text-muted);">Point camera at desk or lane (Cart on left, Scanner center, Bagging right).</span>
+        <button id="startRecordingBtn" class="btn btn-primary" style="background: var(--danger);">Record 5s Clip</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline" id="cancelWebcamBtn">Cancel</button>
     </div>
   </dialog>
 

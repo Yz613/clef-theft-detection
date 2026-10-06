@@ -23,5 +23,9 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@types/multer": "^2.3.0",
+    "multer": "^2.4.0"
   }
 }

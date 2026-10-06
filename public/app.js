@@ -4,9 +4,14 @@ let currentEvent = null;
 let currentInput = null;
 let currentDecision = null;
 let animationTimer = null;
+let selectedFile = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let webcamStream = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
+  setupRealVideoHandlers();
   await loadScenarios();
   await loadQueue();
 });
@@ -104,12 +109,255 @@ function setupEventListeners() {
   });
 }
 
+function setupRealVideoHandlers() {
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('videoFileInput');
+  const dropZoneText = document.getElementById('dropZoneText');
+  const uploadBtn = document.getElementById('uploadAndAnalyzeBtn');
+  const progressText = document.getElementById('uploadProgressText');
+
+  // Trigger file browser on click
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      selectedFile = e.target.files[0];
+      dropZoneText.textContent = `🎬 Selected: ${selectedFile.name} (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)`;
+    }
+  });
+
+  // Drag and drop events
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('dragover');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      selectedFile = e.dataTransfer.files[0];
+      dropZoneText.textContent = `🎬 Selected: ${selectedFile.name} (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)`;
+    }
+  });
+
+  // Upload and analyze button
+  uploadBtn.addEventListener('click', async () => {
+    if (!selectedFile) {
+      alert('Please select or drop a video file (.mp4, .mov, .webm) first.');
+      return;
+    }
+
+    const cType = document.getElementById('uploadCheckoutType').value;
+    const formData = new FormData();
+    formData.append('video', selectedFile);
+    formData.append('checkout_type', cType);
+
+    progressText.style.display = 'block';
+    progressText.textContent = '⏳ Uploading video & running OpenCV motion segmentation & Clef inference...';
+    uploadBtn.disabled = true;
+
+    try {
+      const res = await fetch('/api/upload-video', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Server responded with ${res.status}`);
+      }
+
+      const result = await res.json();
+      progressText.style.display = 'none';
+      uploadBtn.disabled = false;
+
+      // Refresh queue and select this event
+      await loadQueue();
+      selectEvent(result.event.event_id);
+
+      // Display real video in player
+      displayRealVideo(result.video_url, result.event, result.metadata);
+    } catch (err) {
+      progressText.style.display = 'none';
+      uploadBtn.disabled = false;
+      alert('Error analyzing video: ' + err.message);
+    }
+  });
+
+  // Built-in Sample Real Video buttons
+  document.getElementById('sampleSkipScanBtn').addEventListener('click', () => {
+    runSampleRealVideo('real_skip_scan', 'self_checkout');
+  });
+
+  document.getElementById('sampleLegitScanBtn').addEventListener('click', () => {
+    runSampleRealVideo('real_legitimate_scan', 'self_checkout');
+  });
+
+  document.getElementById('sampleBobBtn').addEventListener('click', () => {
+    runSampleRealVideo('real_bob_case', 'cashier');
+  });
+
+  // Webcam recording modal setup
+  setupWebcamModal();
+}
+
+async function runSampleRealVideo(sampleId, checkoutType) {
+  const progressText = document.getElementById('uploadProgressText');
+  progressText.style.display = 'block';
+  progressText.textContent = `⏳ Processing real MP4 video sample (${sampleId}) with OpenCV & Clef...`;
+
+  try {
+    const res = await fetch('/api/process-sample-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sample_id: sampleId, checkout_type: checkoutType }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to process sample video');
+    }
+
+    const result = await res.json();
+    progressText.style.display = 'none';
+
+    await loadQueue();
+    selectEvent(result.event.event_id);
+    displayRealVideo(result.video_url, result.event, result.metadata);
+  } catch (err) {
+    progressText.style.display = 'none';
+    alert('Error running sample video: ' + err.message);
+  }
+}
+
+function displayRealVideo(videoUrl, eventOutput, metadata) {
+  const card = document.getElementById('realVideoPlayerCard');
+  const video = document.getElementById('realVideoPlayer');
+  const title = document.getElementById('videoPlayerTitle');
+  const metaBadge = document.getElementById('videoMetaBadge');
+  const timeDisplay = document.getElementById('videoPlaybackTime');
+  const keyframesBox = document.getElementById('keyframesContainer');
+
+  card.style.display = 'block';
+  video.src = videoUrl;
+
+  const durationStr = metadata ? `${metadata.duration_seconds}s` : '5.0s';
+  const fpsStr = metadata ? `${metadata.fps} FPS` : '30 FPS';
+  metaBadge.textContent = `${durationStr} | ${fpsStr} | ${metadata?.width || 854}x${metadata?.height || 480}`;
+  title.textContent = `📹 Real Footage: ${videoUrl.split('/').pop()} (${eventOutput.observable_behavior.primary_behavior})`;
+
+  video.addEventListener('timeupdate', () => {
+    const cur = video.currentTime.toFixed(1);
+    const dur = (video.duration || 0).toFixed(1);
+    timeDisplay.textContent = `${cur}s / ${dur}s`;
+  });
+
+  // Populate Keyframe Gallery
+  keyframesBox.innerHTML = '';
+  const frames = eventOutput?.visual_context?.frames || [];
+  if (frames.length > 0) {
+    frames.forEach((fUrl, fIdx) => {
+      const kCard = document.createElement('div');
+      kCard.className = 'keyframe-card';
+      const label = fIdx === 0 ? 'Approach' : fIdx === 1 ? 'Interaction / Bypass' : fIdx === 2 ? 'Bagging' : 'Cart / Departure';
+      kCard.innerHTML = `
+        <img src="/${fUrl}" alt="Keyframe ${fIdx + 1}" onerror="this.style.display='none'">
+        <div class="keyframe-label">${label} (Frame ${fIdx + 1})</div>
+      `;
+      keyframesBox.appendChild(kCard);
+    });
+  } else {
+    keyframesBox.innerHTML = '<span style="font-size:0.75rem; color:var(--text-dim);">No keyframe images</span>';
+  }
+
+  // Scroll smoothly to player
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function setupWebcamModal() {
+  const modal = document.getElementById('webcamDialog');
+  const openBtn = document.getElementById('recordWebcamBtn');
+  const closeBtn = document.getElementById('closeWebcamBtn');
+  const cancelBtn = document.getElementById('cancelWebcamBtn');
+  const startRecBtn = document.getElementById('startRecordingBtn');
+  const liveVideo = document.getElementById('webcamLiveVideo');
+  const countdownText = document.getElementById('recordCountdownText');
+
+  openBtn.addEventListener('click', async () => {
+    try {
+      webcamStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 360 } });
+      liveVideo.srcObject = webcamStream;
+      modal.showModal();
+    } catch (err) {
+      alert('Could not access webcam: ' + err.message);
+    }
+  });
+
+  function stopWebcam() {
+    if (webcamStream) {
+      webcamStream.getTracks().forEach((t) => t.stop());
+      webcamStream = null;
+    }
+    modal.close();
+  }
+
+  closeBtn.addEventListener('click', stopWebcam);
+  cancelBtn.addEventListener('click', stopWebcam);
+
+  startRecBtn.addEventListener('click', () => {
+    if (!webcamStream) return;
+    recordedChunks = [];
+    try {
+      mediaRecorder = new MediaRecorder(webcamStream, { mimeType: 'video/webm' });
+    } catch {
+      mediaRecorder = new MediaRecorder(webcamStream);
+    }
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const file = new File([blob], `webcam_record_${Date.now()}.webm`, { type: 'video/webm' });
+      selectedFile = file;
+      document.getElementById('dropZoneText').textContent = `📹 Recorded: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
+      stopWebcam();
+
+      // Trigger automatic analysis
+      document.getElementById('uploadAndAnalyzeBtn').click();
+    };
+
+    mediaRecorder.start();
+    startRecBtn.disabled = true;
+
+    let secondsLeft = 5;
+    countdownText.textContent = `🔴 RECORDING: ${secondsLeft}s remaining... (perform checkout motion)`;
+    const timer = setInterval(() => {
+      secondsLeft--;
+      if (secondsLeft <= 0) {
+        clearInterval(timer);
+        countdownText.textContent = 'Processing recording...';
+        mediaRecorder.stop();
+        startRecBtn.disabled = false;
+      } else {
+        countdownText.textContent = `🔴 RECORDING: ${secondsLeft}s remaining...`;
+      }
+    }, 1000);
+  });
+}
+
 async function loadScenarios() {
   try {
     const res = await fetch('/api/scenarios');
     const scenarios = await res.json();
     const select = document.getElementById('scenarioSelect');
-    select.innerHTML = '<option value="">-- Load Scenario --</option>';
+    select.innerHTML = '<option value="">-- Load Benchmark Scenario --</option>';
 
     scenarios.forEach((s) => {
       const opt = document.createElement('option');
@@ -188,6 +436,14 @@ async function selectEvent(eventId) {
     currentEvent = item.event;
     currentInput = item.input;
     renderCurrentEvent(item);
+
+    // If this item has a real video attached, show it in the video player
+    if (item.input?.visual_context?.video && (item.input.visual_context.video.endsWith('.mp4') || item.input.visual_context.video.endsWith('.webm'))) {
+      const videoPath = item.input.visual_context.video.startsWith('/')
+        ? item.input.visual_context.video
+        : `/${item.input.visual_context.video}`;
+      displayRealVideo(videoPath, item.event, null);
+    }
 
     // Update active class in list
     document.querySelectorAll('.queue-item').forEach((q) => {
@@ -362,7 +618,7 @@ function renderTrajectory(input) {
       span.className = 'path-node';
       span.textContent = node;
 
-      if (!hasScanner && (node.includes('BAG') || node.includes('CUSTOMER') || node.includes('EXIT'))) {
+      if (!hasScanner && (node.includes('BAG') || node.includes('CUSTOMER') || node.includes('EXIT') || node.includes('SIDE'))) {
         span.classList.add('suspicious');
       } else if (node.includes('SCANNER')) {
         span.classList.add('valid');
@@ -397,6 +653,7 @@ function renderTimeline(timeline) {
   timeline.forEach((item) => {
     const el = document.createElement('div');
     el.className = 'timeline-item';
+    el.style.cursor = 'pointer';
 
     let dotClass = 'dot-normal';
     if (item.source === 'pos') {
@@ -415,6 +672,19 @@ function renderTimeline(timeline) {
         ${item.description}
       </div>
     `;
+
+    // Clicking timeline item seeks the real video player
+    el.addEventListener('click', () => {
+      const video = document.getElementById('realVideoPlayer');
+      if (video && video.src) {
+        const parts = item.timestamp.split(':');
+        if (parts.length === 3) {
+          const sec = parseFloat(parts[2]) % (video.duration || 10);
+          video.currentTime = sec;
+          video.play().catch(() => {});
+        }
+      }
+    });
 
     container.appendChild(el);
   });

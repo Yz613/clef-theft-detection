@@ -1,18 +1,43 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { ShrinkDetectionService } from '../service/shrink_detection_service.js';
 import { CheckoutInferenceInput, HumanReviewDecision, HumanReviewLabel } from '../types/index.js';
+import { VideoProcessor } from '../pipeline/video_processor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Configure multer for real video uploads
+const uploadsDir = path.resolve(__dirname, '../../public/uploads/videos');
+const framesDir = path.resolve(__dirname, '../../public/uploads/frames');
+fs.mkdirSync(uploadsDir, { recursive: true });
+fs.mkdirSync(framesDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.mp4';
+    const unique = `video_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
+    cb(null, unique);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 250 * 1024 * 1024 }, // 250MB video limit
+});
 
 export function createServer(service: ShrinkDetectionService) {
   const app = express();
 
   app.use(cors());
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '50mb' }));
 
   // Serve static assets from public/
   const publicDir = path.resolve(__dirname, '../../public');
@@ -29,6 +54,100 @@ export function createServer(service: ShrinkDetectionService) {
       configured_token: Boolean(process.env.CLOUDFLARE_API_TOKEN),
       timestamp: new Date().toISOString(),
     });
+  });
+
+  // Upload and process a REAL checkout video
+  app.post('/api/upload-video', upload.single('video'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No video file uploaded' });
+      }
+
+      const checkoutType = (req.body.checkout_type as 'cashier' | 'self_checkout') || 'self_checkout';
+      const laneId = req.body.lane_id || (checkoutType === 'cashier' ? 'lane_02' : 'sco_03');
+      const storeId = req.body.store_id || 'store_104';
+
+      console.log(`[VideoUpload] Processing uploaded video: ${req.file.path} (${checkoutType})`);
+
+      // Run OpenCV CV pipeline
+      const cvResult = await VideoProcessor.processVideo(req.file.path, checkoutType, framesDir);
+
+      const eventId = `evt_real_${Date.now().toString(36)}`;
+      const videoRelativeUrl = `/uploads/videos/${req.file.filename}`;
+
+      // Assemble inference input
+      const inferenceInput: CheckoutInferenceInput = {
+        event_id: eventId,
+        store_id: storeId,
+        lane_id: laneId,
+        checkout_type: checkoutType,
+        visual_context: {
+          ...cvResult.visual_context,
+          video: videoRelativeUrl,
+        },
+        transaction_context: null, // V1 visual-only
+      };
+
+      // Run Clef probabilistic classification
+      const eventOutput = await service.analyzeEvent(inferenceInput);
+
+      res.json({
+        event: eventOutput,
+        input: inferenceInput,
+        video_url: videoRelativeUrl,
+        metadata: cvResult.metadata,
+      });
+    } catch (err: any) {
+      console.error('[VideoUpload error]', err);
+      res.status(500).json({ error: err.message || 'Error processing video' });
+    }
+  });
+
+  // Process a built-in sample real video (real_skip_scan, real_legitimate_scan, real_bob_case)
+  app.post('/api/process-sample-video', async (req, res) => {
+    try {
+      const { sample_id, checkout_type } = req.body as {
+        sample_id: string;
+        checkout_type?: 'cashier' | 'self_checkout';
+      };
+
+      const cType = checkout_type || (sample_id.includes('cashier') ? 'cashier' : 'self_checkout');
+      const videoPath = path.resolve(__dirname, `../../public/samples/${sample_id}.mp4`);
+
+      if (!fs.existsSync(videoPath)) {
+        return res.status(404).json({ error: `Sample video not found: ${sample_id}.mp4` });
+      }
+
+      console.log(`[SampleVideo] Processing sample video: ${videoPath} (${cType})`);
+      const cvResult = await VideoProcessor.processVideo(videoPath, cType, framesDir);
+
+      const eventId = `evt_${sample_id}_${Date.now().toString(36)}`;
+      const videoRelativeUrl = `/samples/${sample_id}.mp4`;
+
+      const inferenceInput: CheckoutInferenceInput = {
+        event_id: eventId,
+        store_id: 'store_104',
+        lane_id: cType === 'cashier' ? 'cashier_01' : 'sco_02',
+        checkout_type: cType,
+        visual_context: {
+          ...cvResult.visual_context,
+          video: videoRelativeUrl,
+        },
+        transaction_context: null,
+      };
+
+      const eventOutput = await service.analyzeEvent(inferenceInput);
+
+      res.json({
+        event: eventOutput,
+        input: inferenceInput,
+        video_url: videoRelativeUrl,
+        metadata: cvResult.metadata,
+      });
+    } catch (err: any) {
+      console.error('[SampleVideo error]', err);
+      res.status(500).json({ error: err.message || 'Error processing sample video' });
+    }
   });
 
   // Run detection on custom inference input
