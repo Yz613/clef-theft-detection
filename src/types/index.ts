@@ -124,6 +124,12 @@ export interface VisualContext {
     child_seat_items_detected: number;
     concealed_items_detected: number;
   };
+  keyframes?: Array<{
+    frame_number?: number;
+    timestamp_sec: number;
+    relative_path: string;
+    data_url?: string;
+  }>;
 }
 
 export interface PosScan {
@@ -396,6 +402,7 @@ export type ClefQuestion = ClefNoulQuestion | ClefChoiceQuestion | ClefScoreQues
 export interface ClefRequest {
   model?: '@cf/cloudflare/clef' | '@cf/cloudflare/clef-flash' | string;
   state: string | Record<string, any> | any;
+  images?: string[];
   questions: Record<string, ClefQuestion>;
 }
 

@@ -1,11 +1,13 @@
-import { VisualContext, RetailerTheftSummary } from '../types/index.js';
+import { VisualContext } from '../types/index.js';
+export interface ExtractedKeyframe {
+    frame_number: number;
+    timestamp_sec: number;
+    relative_path: string;
+    disk_path: string;
+    data_url: string;
+}
 export interface VideoProcessingResult {
     video_path: string;
-    detected_checkout_type: 'cashier' | 'self_checkout';
-    checkout_type_confidence: number;
-    lane_classification_evidence: string;
-    detected_theft_types: string[];
-    retailer_theft_summary: RetailerTheftSummary;
     metadata: {
         fps: number;
         total_frames: number;
@@ -13,12 +15,13 @@ export interface VideoProcessingResult {
         width: number;
         height: number;
     };
+    keyframes: ExtractedKeyframe[];
     visual_context: VisualContext;
 }
 export declare class VideoProcessor {
     /**
-     * Invokes Python OpenCV script to extract activity windows,
-     * item trajectories, keyframes, lane type, and retailer theft classifications.
+     * Extracts visual keyframes from video using PyAV & Pillow (No OpenCV)
+     * for direct multimodal evaluation by Cloudflare Clef (@cf/cloudflare/clef).
      */
-    static processVideo(videoPath: string, checkoutType?: 'cashier' | 'self_checkout' | 'auto', outputFramesDir?: string): Promise<VideoProcessingResult>;
+    static processVideo(videoPath: string, outputFramesDir?: string, numKeyframes?: number): Promise<VideoProcessingResult>;
 }

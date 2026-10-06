@@ -4,8 +4,8 @@ export declare class ProbabilisticClassifier {
     private clefClient;
     constructor(clefClient: ClefClient);
     /**
-     * Evaluates checkout video & activity through Clef decision model,
-     * returning tiered probabilities and review recommendations.
+     * Evaluates checkout video keyframes directly through Cloudflare Clef
+     * multimodal decision model (@cf/cloudflare/clef).
      */
     classify(input: CheckoutInferenceInput): Promise<CheckoutEventOutput>;
 }

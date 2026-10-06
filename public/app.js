@@ -259,7 +259,7 @@ function setupRealVideoHandlers() {
     formData.append('checkout_type', cType);
 
     progressText.style.display = 'block';
-    progressText.textContent = '⏳ Uploading video & running OpenCV motion segmentation & Clef inference...';
+    progressText.textContent = '⏳ Uploading video & running Cloudflare Clef multimodal decision model (@cf/cloudflare/clef)...';
     uploadBtn.disabled = true;
 
     try {
@@ -310,7 +310,7 @@ function setupRealVideoHandlers() {
 async function runSampleRealVideo(sampleId, checkoutType) {
   const progressText = document.getElementById('uploadProgressText');
   progressText.style.display = 'block';
-  progressText.textContent = `⏳ Processing real MP4 video sample (${sampleId}) with OpenCV & Clef...`;
+  progressText.textContent = `⏳ Processing real MP4 video sample (${sampleId}) with Cloudflare Clef (@cf/cloudflare/clef)...`;
 
   try {
     const res = await fetch('/api/process-sample-video', {

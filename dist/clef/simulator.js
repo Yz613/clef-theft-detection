@@ -24,6 +24,14 @@ export class ClefSimulator {
                     noul: Math.min(0.99, Math.max(0.01, Math.round(prob * 100) / 100)),
                 };
             }
+            else if (qDef.type === 'choice') {
+                answers[qKey] = {
+                    type: 'choice',
+                    choice: 'cashier',
+                    probabilities: { cashier: 0.82, self_checkout: 0.18 },
+                    confidence: 0.64,
+                };
+            }
         }
         return {
             result: {
@@ -63,6 +71,32 @@ export class ClefSimulator {
             }
         }
         switch (questionKey) {
+            case 'non_scan': {
+                const passAround = this.evaluateNoulQuestion('pass_around', stateObj, rawState);
+                const skipScan = this.evaluateNoulQuestion('skip_scan', stateObj, rawState);
+                const fakeScan = this.evaluateNoulQuestion('fake_scan', stateObj, rawState);
+                return Math.max(passAround, skipScan, fakeScan);
+            }
+            case 'left_in_cart': {
+                const inCart = this.evaluateNoulQuestion('item_left_in_cart', stateObj, rawState);
+                const bob = this.evaluateNoulQuestion('bottom_of_basket', stateObj, rawState);
+                return Math.max(inCart, bob);
+            }
+            case 'inventory_loss': {
+                const nonScan = this.evaluateNoulQuestion('non_scan', stateObj, rawState);
+                const leftInCart = this.evaluateNoulQuestion('left_in_cart', stateObj, rawState);
+                return Math.min(0.98, Math.max(0.04, Math.round(Math.max(nonScan * 0.94, leftInCart * 0.90) * 100) / 100));
+            }
+            case 'review_recommended': {
+                const nonScan = this.evaluateNoulQuestion('non_scan', stateObj, rawState);
+                const leftInCart = this.evaluateNoulQuestion('left_in_cart', stateObj, rawState);
+                return Math.max(nonScan, leftInCart);
+            }
+            case 'no_sale': return 0.03;
+            case 'price_lookup_abuse': return 0.04;
+            case 'suspicious_refund': return 0.02;
+            case 'canceled_transaction': return 0.03;
+            case 'late_night_food_prep': return 0.01;
             case 'sufficient_visual_evidence': {
                 if (!stateObj)
                     return 0.50;

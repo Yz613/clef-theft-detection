@@ -39,10 +39,13 @@ export function createServer(service) {
         res.json({
             service: 'Clef Grocery Checkout Shrink Detection',
             model: clef.getModelName(),
-            mode: clef.isUsingSimulator() ? 'Local OpenCV Vision Engine (No Cloudflare API Keys Configured)' : 'Cloudflare Workers AI Live API (@cf/cloudflare/clef)',
+            mode: clef.isUsingSimulator()
+                ? 'Local Fallback Simulator'
+                : 'Cloudflare Workers AI Live API (@cf/cloudflare/clef)',
             is_using_live_clef: !clef.isUsingSimulator(),
-            configured_account: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID),
-            configured_token: Boolean(process.env.CLOUDFLARE_API_TOKEN),
+            account_id: clef.getAccountId(),
+            configured_account: Boolean(clef.getAccountId()),
+            configured_token: !clef.isUsingSimulator(),
             timestamp: new Date().toISOString(),
         });
     });
@@ -65,7 +68,7 @@ export function createServer(service) {
         service.getReviewStore().clear();
         res.json({ success: true, count: 0, message: 'Review queue cleared.' });
     });
-    // Upload and process a REAL checkout video
+    // Upload and process a REAL checkout video directly through Cloudflare Clef
     app.post('/api/upload-video', upload.single('video'), async (req, res) => {
         try {
             if (!req.file) {
@@ -73,32 +76,31 @@ export function createServer(service) {
             }
             const checkoutType = req.body.checkout_type || 'auto';
             const storeId = req.body.store_id || 'store_104';
-            console.log(`[VideoUpload] Processing uploaded video: ${req.file.path} (requested type: ${checkoutType})`);
-            // Run OpenCV CV pipeline (with auto lane detection and 8 retailer theft categories)
-            const cvResult = await VideoProcessor.processVideo(req.file.path, checkoutType, framesDir);
-            const resolvedType = checkoutType === 'auto' ? cvResult.detected_checkout_type : checkoutType;
-            const laneId = req.body.lane_id || (resolvedType === 'cashier' ? 'lane_02' : 'sco_03');
+            console.log(`[VideoUpload] Processing uploaded video with Clef: ${req.file.path} (requested type: ${checkoutType})`);
+            // Extract keyframes using PyAV & Pillow (No OpenCV)
+            const extractionResult = await VideoProcessor.processVideo(req.file.path, framesDir, 4);
+            const laneId = req.body.lane_id || (checkoutType === 'cashier' ? 'lane_02' : 'sco_03');
             const eventId = `evt_real_${Date.now().toString(36)}`;
             const videoRelativeUrl = `/uploads/videos/${req.file.filename}`;
-            // Assemble inference input
+            // Assemble inference input with keyframe base64 images for Clef
             const inferenceInput = {
                 event_id: eventId,
                 store_id: storeId,
                 lane_id: laneId,
-                checkout_type: resolvedType,
+                checkout_type: checkoutType,
                 visual_context: {
-                    ...cvResult.visual_context,
+                    ...extractionResult.visual_context,
                     video: videoRelativeUrl,
                 },
                 transaction_context: null, // V1 visual-only
             };
-            // Run Clef probabilistic classification
+            // Run Cloudflare Clef multimodal decision inference
             const eventOutput = await service.analyzeEvent(inferenceInput);
             res.json({
                 event: eventOutput,
                 input: inferenceInput,
                 video_url: videoRelativeUrl,
-                metadata: cvResult.metadata,
+                metadata: extractionResult.metadata,
             });
         }
         catch (err) {
@@ -106,7 +108,7 @@ export function createServer(service) {
             res.status(500).json({ error: err.message || 'Error processing video' });
         }
     });
-    // Process a built-in sample real video (real_skip_scan, real_legitimate_scan, real_bob_case)
+    // Process a built-in sample real video through Cloudflare Clef
     app.post('/api/process-sample-video', async (req, res) => {
         try {
             const { sample_id, checkout_type } = req.body;
@@ -115,18 +117,17 @@ export function createServer(service) {
             if (!fs.existsSync(videoPath)) {
                 return res.status(404).json({ error: `Sample video not found: ${sample_id}.mp4` });
             }
-            console.log(`[SampleVideo] Processing sample video: ${videoPath} (${cType})`);
-            const cvResult = await VideoProcessor.processVideo(videoPath, cType, framesDir);
-            const resolvedType = cType === 'auto' ? cvResult.detected_checkout_type : cType;
+            console.log(`[SampleVideo] Processing sample video with Clef: ${videoPath} (${cType})`);
+            const extractionResult = await VideoProcessor.processVideo(videoPath, framesDir, 4);
             const eventId = `evt_${sample_id}_${Date.now().toString(36)}`;
             const videoRelativeUrl = `/samples/${sample_id}.mp4`;
             const inferenceInput = {
                 event_id: eventId,
                 store_id: 'store_104',
-                lane_id: resolvedType === 'cashier' ? 'cashier_01' : 'sco_02',
-                checkout_type: resolvedType,
+                lane_id: cType === 'cashier' ? 'cashier_01' : 'sco_02',
+                checkout_type: cType,
                 visual_context: {
-                    ...cvResult.visual_context,
+                    ...extractionResult.visual_context,
                     video: videoRelativeUrl,
                 },
                 transaction_context: null,
@@ -136,7 +137,7 @@ export function createServer(service) {
                 event: eventOutput,
                 input: inferenceInput,
                 video_url: videoRelativeUrl,
-                metadata: cvResult.metadata,
+                metadata: extractionResult.metadata,
             });
         }
         catch (err) {
