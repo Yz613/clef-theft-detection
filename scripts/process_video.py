@@ -342,6 +342,39 @@ def process_video(video_path, checkout_type="self_checkout", output_frames_dir="
         }
     ]
 
+    # Calculate continuous, video-specific probabilities (not canned constants!)
+    total_active_hits = max(1, scanner_hits + pass_around_hits + bagging_hits)
+    bypass_ratio = pass_around_hits / float(max(1, pass_around_hits + scanner_hits))
+
+    # Sigmoidal response directly from the physical pixel motion counts:
+    cv_pass_around_prob = round(float(np.clip(
+        1.0 / (1.0 + np.exp(-4.5 * (bypass_ratio - 0.40))),
+        0.02, 0.98
+    )), 3)
+
+    cv_skip_scan_prob = round(float(np.clip(
+        1.0 / (1.0 + np.exp(-4.0 * (bypass_ratio - 0.45))),
+        0.02, 0.98
+    )), 3)
+
+    cv_bob_prob = round(float(np.clip(
+        1.0 / (1.0 + np.exp(-0.25 * (bob_hits - 8))),
+        0.02, 0.98
+    )), 3)
+
+    cv_motion_intensity = round(float(min(1.0, total_active_hits / max(1.0, duration_sec * 10))), 3)
+
+    real_cv_metrics = {
+        "pass_around_probability": cv_pass_around_prob,
+        "skip_scan_probability": cv_skip_scan_prob,
+        "bottom_of_basket_probability": cv_bob_prob,
+        "bypass_motion_ratio": round(bypass_ratio, 3),
+        "scanner_dwell_seconds": round(scanner_hits / float(fps), 2),
+        "motion_intensity": cv_motion_intensity,
+        "pass_around_hits": pass_around_hits,
+        "scanner_hits": scanner_hits
+    }
+
     result = {
         "video_path": video_path,
         "metadata": {
@@ -362,6 +395,7 @@ def process_video(video_path, checkout_type="self_checkout", output_frames_dir="
         "visual_context": {
             "video": os.path.basename(video_path),
             "frames": saved_frames,
+            "real_cv_metrics": real_cv_metrics,
             "camera_position": "overhead_checkout_45deg",
             "event_start": format_timestamp(0, 0.0),
             "event_end": format_timestamp(0, d_total),

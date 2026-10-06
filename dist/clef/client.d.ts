@@ -18,6 +18,7 @@ export declare class ClefClient {
     constructor(config?: ClefClientConfig);
     getModelName(): string;
     isUsingSimulator(): boolean;
+    setCredentials(accountId: string, apiToken: string, model?: string): void;
     /**
      * Run decision inference against Clef model
      */

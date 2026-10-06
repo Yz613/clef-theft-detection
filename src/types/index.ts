@@ -53,9 +53,21 @@ export interface ActivityWindow {
   notes?: string;
 }
 
+export interface RealCvMetrics {
+  pass_around_probability: number;
+  skip_scan_probability: number;
+  bottom_of_basket_probability: number;
+  bypass_motion_ratio: number;
+  scanner_dwell_seconds: number;
+  motion_intensity: number;
+  pass_around_hits: number;
+  scanner_hits: number;
+}
+
 export interface VisualContext {
   video?: string;
   frames?: string[];
+  real_cv_metrics?: RealCvMetrics;
   tracked_items?: Array<{
     id: string;
     path?: string[];

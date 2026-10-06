@@ -1,4 +1,8 @@
 node_modules/
-dist/
 .DS_Store
 .env
+public/uploads/videos/*
+!public/uploads/videos/.gitkeep
+public/uploads/frames/video_*
+public/uploads/frames/debug_*
+test_input.json

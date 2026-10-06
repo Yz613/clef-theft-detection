@@ -19,8 +19,7 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 
 async function main() {
   const service = new ShrinkDetectionService();
-  await service.seedDemoData();
-
+  // Do NOT seed fake demo events; queue starts empty and only contains user-uploaded videos
   const app = createServer(service);
   app.listen(PORT, () => {
     console.log(`================================================================`);

@@ -39,11 +39,31 @@ export function createServer(service) {
         res.json({
             service: 'Clef Grocery Checkout Shrink Detection',
             model: clef.getModelName(),
-            mode: clef.isUsingSimulator() ? 'Local Simulator (Deterministic Calibrated Clef)' : 'Cloudflare Workers AI Live API',
+            mode: clef.isUsingSimulator() ? 'Local OpenCV Vision Engine (No Cloudflare API Keys Configured)' : 'Cloudflare Workers AI Live API (@cf/cloudflare/clef)',
+            is_using_live_clef: !clef.isUsingSimulator(),
             configured_account: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID),
             configured_token: Boolean(process.env.CLOUDFLARE_API_TOKEN),
             timestamp: new Date().toISOString(),
         });
+    });
+    // Configure Cloudflare Workers AI credentials dynamically
+    app.post('/api/config/clef', (req, res) => {
+        const { accountId, apiToken, model } = req.body;
+        if (!accountId || !apiToken) {
+            return res.status(400).json({ error: 'accountId and apiToken are required' });
+        }
+        service.getClefClient().setCredentials(accountId, apiToken, model || '@cf/cloudflare/clef');
+        res.json({
+            success: true,
+            mode: 'Cloudflare Workers AI Live API (@cf/cloudflare/clef)',
+            model: model || '@cf/cloudflare/clef',
+            message: 'Cloudflare credentials updated. All subsequent inferences will query @cf/cloudflare/clef on Cloudflare Workers AI.',
+        });
+    });
+    // Clear the review queue
+    app.post('/api/queue/clear', (req, res) => {
+        service.getReviewStore().clear();
+        res.json({ success: true, count: 0, message: 'Review queue cleared.' });
     });
     // Upload and process a REAL checkout video
     app.post('/api/upload-video', upload.single('video'), async (req, res) => {

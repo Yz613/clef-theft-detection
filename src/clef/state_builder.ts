@@ -43,6 +43,16 @@ export interface FormattedClefState {
       unmatched_pos_scans: number;
       quantity_discrepancy: number;
     };
+    real_cv_metrics?: {
+      pass_around_probability: number;
+      skip_scan_probability: number;
+      bottom_of_basket_probability: number;
+      bypass_motion_ratio: number;
+      scanner_dwell_seconds: number;
+      motion_intensity: number;
+      pass_around_hits: number;
+      scanner_hits: number;
+    };
   };
   narrative_context: string;
   frame_references?: string[];
@@ -177,6 +187,7 @@ export function buildClefState(input: CheckoutInferenceInput): FormattedClefStat
       },
       activity_timeline: activityTimeline,
       transaction_records: transactionRecords,
+      real_cv_metrics: visual_context.real_cv_metrics,
     },
     narrative_context: narrativeParts.join('\n'),
     frame_references: visual_context.frames,

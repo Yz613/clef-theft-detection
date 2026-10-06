@@ -42,6 +42,16 @@ export interface FormattedClefState {
             unmatched_pos_scans: number;
             quantity_discrepancy: number;
         };
+        real_cv_metrics?: {
+            pass_around_probability: number;
+            skip_scan_probability: number;
+            bottom_of_basket_probability: number;
+            bypass_motion_ratio: number;
+            scanner_dwell_seconds: number;
+            motion_intensity: number;
+            pass_around_hits: number;
+            scanner_hits: number;
+        };
     };
     narrative_context: string;
     frame_references?: string[];

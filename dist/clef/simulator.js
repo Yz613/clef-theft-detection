@@ -39,6 +39,29 @@ export class ClefSimulator {
         const cart = summary?.cart_inspection;
         const tx = summary?.transaction_records;
         const checkoutType = summary?.checkout_type || 'self_checkout';
+        const cvMetrics = summary?.real_cv_metrics;
+        // If real video computer vision metrics are present, compute dynamically from actual pixel motion!
+        if (cvMetrics) {
+            if (questionKey === 'pass_around')
+                return cvMetrics.pass_around_probability;
+            if (questionKey === 'skip_scan')
+                return cvMetrics.skip_scan_probability;
+            if (questionKey === 'bottom_of_basket')
+                return cvMetrics.bottom_of_basket_probability;
+            if (questionKey === 'unscanned_merchandise_event') {
+                return Math.max(cvMetrics.pass_around_probability, cvMetrics.skip_scan_probability, cvMetrics.bottom_of_basket_probability);
+            }
+            if (questionKey === 'intentional_shrink') {
+                const primary = Math.max(cvMetrics.pass_around_probability, cvMetrics.skip_scan_probability);
+                return primary >= 0.60 ? Math.round(primary * 0.85 * 100) / 100 : 0.05;
+            }
+            if (questionKey === 'sweethearting' && checkoutType === 'cashier') {
+                return cvMetrics.pass_around_probability >= 0.60 ? Math.round(cvMetrics.pass_around_probability * 0.88 * 100) / 100 : 0.02;
+            }
+            if (questionKey === 'sufficient_visual_evidence') {
+                return Math.min(0.98, Math.max(0.70, 0.85 + (cvMetrics.motion_intensity * 0.1)));
+            }
+        }
         switch (questionKey) {
             case 'sufficient_visual_evidence': {
                 if (!stateObj)

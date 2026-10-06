@@ -34,6 +34,13 @@ export class ClefClient {
     return this.forceSimulator || !this.accountId || !this.apiToken;
   }
 
+  public setCredentials(accountId: string, apiToken: string, model?: string): void {
+    this.accountId = accountId;
+    this.apiToken = apiToken;
+    if (model) this.model = model;
+    this.forceSimulator = !accountId || !apiToken;
+  }
+
   /**
    * Run decision inference against Clef model
    */

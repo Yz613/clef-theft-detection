@@ -12,11 +12,112 @@ let webcamStream = null;
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   setupRealVideoHandlers();
+  await checkClefStatus();
   await loadScenarios();
   await loadQueue();
 });
 
+async function checkClefStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    const badgeText = document.getElementById('clefStatusText');
+    const badgeDot = document.getElementById('clefStatusDot');
+    if (badgeText && badgeDot) {
+      if (data.is_using_live_clef) {
+        badgeText.textContent = 'Cloudflare Live (@cf/cloudflare/clef)';
+        badgeDot.style.background = '#10b981';
+      } else {
+        badgeText.textContent = 'Local CV Engine';
+        badgeDot.style.background = '#eab308';
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch Clef status:', err);
+  }
+}
+
 function setupEventListeners() {
+  // Clear Queue button
+  const clearBtn = document.getElementById('clearQueueBtn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to clear all items from the review queue?')) return;
+      try {
+        const res = await fetch('/api/queue/clear', { method: 'POST' });
+        if (!res.ok) throw new Error('Failed to clear queue');
+        currentEvent = null;
+        currentInput = null;
+        await loadQueue();
+      } catch (err) {
+        alert('Error clearing queue: ' + err.message);
+      }
+    });
+  }
+
+  // Cloudflare Configuration Modal
+  const configModal = document.getElementById('configDialog');
+  const openConfigBtn = document.getElementById('configClefBtn');
+  const statusBadge = document.getElementById('clefStatusBadge');
+  const closeConfigBtn = document.getElementById('closeConfigBtn');
+  const cancelConfigBtn = document.getElementById('cancelConfigBtn');
+  const saveConfigBtn = document.getElementById('saveConfigBtn');
+
+  if (openConfigBtn) openConfigBtn.addEventListener('click', () => configModal.showModal());
+  if (statusBadge) statusBadge.addEventListener('click', () => configModal.showModal());
+  if (closeConfigBtn) closeConfigBtn.addEventListener('click', () => configModal.close());
+  if (cancelConfigBtn) cancelConfigBtn.addEventListener('click', () => configModal.close());
+
+  if (saveConfigBtn) {
+    saveConfigBtn.addEventListener('click', async () => {
+      const accountId = document.getElementById('cfAccountIdInput').value.trim();
+      const apiToken = document.getElementById('cfApiTokenInput').value.trim();
+      const model = document.getElementById('cfModelInput').value.trim() || '@cf/cloudflare/clef';
+      const statusMsg = document.getElementById('cfConfigStatusMsg');
+
+      if (!accountId || !apiToken) {
+        statusMsg.style.display = 'block';
+        statusMsg.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusMsg.style.color = '#fca5a5';
+        statusMsg.textContent = 'Account ID and API Token are required.';
+        return;
+      }
+
+      try {
+        saveConfigBtn.disabled = true;
+        statusMsg.style.display = 'block';
+        statusMsg.style.background = 'rgba(56, 189, 248, 0.2)';
+        statusMsg.style.color = '#7dd3fc';
+        statusMsg.textContent = 'Validating and connecting to Cloudflare Workers AI...';
+
+        const res = await fetch('/api/config/clef', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountId, apiToken, model }),
+        });
+
+        const data = await res.json();
+        saveConfigBtn.disabled = false;
+
+        if (!res.ok) throw new Error(data.error || 'Failed to save configuration');
+
+        statusMsg.style.background = 'rgba(16, 185, 129, 0.2)';
+        statusMsg.style.color = '#86efac';
+        statusMsg.textContent = 'Connected! Now querying @cf/cloudflare/clef live.';
+
+        await checkClefStatus();
+        setTimeout(() => {
+          configModal.close();
+          statusMsg.style.display = 'none';
+        }, 1200);
+      } catch (err) {
+        saveConfigBtn.disabled = false;
+        statusMsg.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusMsg.style.color = '#fca5a5';
+        statusMsg.textContent = 'Error: ' + err.message;
+      }
+    });
+  }
   document.getElementById('runScenarioBtn').addEventListener('click', async () => {
     const sel = document.getElementById('scenarioSelect');
     if (!sel.value) return;
@@ -380,7 +481,8 @@ async function loadQueue() {
     count.textContent = `${items.length} items`;
 
     if (items.length === 0) {
-      list.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 10px;">Queue is empty</div>';
+      list.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 20px 10px; text-align: center; line-height: 1.5;">Queue is empty.<br><span style="font-size:0.75rem; color: #38bdf8;">Upload or drop an MP4 video above to run detection.</span></div>';
+      renderEmptyWorkspace();
       return;
     }
 
@@ -452,6 +554,40 @@ async function selectEvent(eventId) {
   } catch (err) {
     console.error('Failed to load event details:', err);
   }
+}
+
+function renderEmptyWorkspace() {
+  currentEvent = null;
+  currentInput = null;
+  currentDecision = null;
+  document.getElementById('heroEventId').textContent = 'No Event Selected';
+  const prioBadge = document.getElementById('heroPriorityBadge');
+  prioBadge.textContent = 'READY';
+  prioBadge.className = 'status-pill score-low';
+  const typeBadge = document.getElementById('heroCheckoutTypeBadge');
+  typeBadge.textContent = 'AWAITING VIDEO';
+  document.getElementById('heroStoreLane').textContent = 'Lane: -- | Store: --';
+  document.getElementById('heroTimestamp').textContent = 'Awaiting Ingestion';
+  document.getElementById('heroPosStatus').textContent = 'Phase 1 Ready';
+  document.getElementById('heroExplanation').textContent =
+    'No videos in the queue. Drop an MP4, MOV, or WEBM video in the ingestion panel above, or record webcam footage, to extract computer vision motion trajectories and run Clef probabilistic shrink estimation.';
+
+  document.getElementById('gaugeLossLikelihood').textContent = '--%';
+  document.getElementById('gaugeLossLikelihood').style.color = 'var(--text-muted)';
+  document.getElementById('gaugeIntent').textContent = '--%';
+  document.getElementById('gaugeQuality').textContent = '--%';
+  document.getElementById('primaryBehaviorBadge').textContent = 'Primary: None';
+
+  document.getElementById('behaviorProbList').innerHTML =
+    '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 16px; text-align: center;">No active behavioral evaluation. Ingest a video above to begin.</div>';
+  document.getElementById('trajectoryPathContainer').innerHTML =
+    '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 16px; text-align: center;">No motion trajectory recorded yet.</div>';
+  document.getElementById('trajectoryAnomaliesCount').textContent = '--';
+  document.getElementById('timelineList').innerHTML =
+    '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 16px; text-align: center;">Timeline empty.</div>';
+
+  const playerCard = document.getElementById('realVideoPlayerCard');
+  if (playerCard) playerCard.style.display = 'none';
 }
 
 function renderCurrentEvent(item) {

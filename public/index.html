@@ -16,6 +16,11 @@
       </div>
     </div>
     <div class="header-controls">
+      <div id="clefStatusBadge" class="status-pill score-medium" style="cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.75rem;" title="Click to view/configure Cloudflare Workers AI credentials">
+        <span class="status-dot" id="clefStatusDot" style="width: 8px; height: 8px; border-radius: 50%; background: #eab308; display: inline-block;"></span>
+        <span id="clefStatusText">Local Vision Engine</span>
+      </div>
+      <button id="configClefBtn" class="btn btn-outline" style="font-size: 0.8rem;">⚙️ Cloudflare Config</button>
       <select id="scenarioSelect" class="select-scenario" aria-label="Select benchmark scenario">
         <option value="">-- Load Benchmark Scenario --</option>
       </select>
@@ -29,7 +34,10 @@
     <aside class="queue-sidebar">
       <div class="sidebar-title">
         <span>Review Queue</span>
-        <span id="queueCount" class="badge-count">0 items</span>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <span id="queueCount" class="badge-count">0 items</span>
+          <button id="clearQueueBtn" class="btn btn-outline" style="padding: 2px 7px; font-size: 0.72rem; color: #f87171; border-color: rgba(248, 113, 113, 0.35);" title="Clear all videos from queue">Clear</button>
+        </div>
       </div>
       <div id="queueList" class="queue-list" role="list">
         <!-- Rendered dynamically -->
@@ -298,6 +306,36 @@
     </div>
     <div class="modal-footer">
       <button type="button" class="btn btn-primary" id="copyJsonBtn">Copy JSON</button>
+    </div>
+  </dialog>
+
+  <!-- Cloudflare Workers AI Credentials Dialog -->
+  <dialog id="configDialog">
+    <div class="modal-header">
+      <h3>⚙️ Cloudflare Workers AI (@cf/cloudflare/clef) Setup</h3>
+      <button type="button" class="btn btn-outline" id="closeConfigBtn" style="padding: 4px 8px;">✕</button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+      <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+        Connect directly to Cloudflare's inference API for <code>@cf/cloudflare/clef</code>. When configured, requests are dispatched live to Cloudflare Workers AI. When unconfigured, the service operates using the local vision motion analysis engine that computes physical probabilities directly from video frames.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="cfAccountIdInput">Cloudflare Account ID</label>
+        <input id="cfAccountIdInput" class="form-control" type="text" placeholder="e.g. 1a2b3c4d5e6f...">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="cfApiTokenInput">Cloudflare API Token (Workers AI Read/Write)</label>
+        <input id="cfApiTokenInput" class="form-control" type="password" placeholder="Bearer Token with Workers AI permissions">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="cfModelInput">Model Name</label>
+        <input id="cfModelInput" class="form-control" type="text" value="@cf/cloudflare/clef">
+      </div>
+      <div id="cfConfigStatusMsg" style="font-size: 0.82rem; display: none; padding: 8px 12px; border-radius: var(--radius-sm);"></div>
+    </div>
+    <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+      <button type="button" class="btn btn-outline" id="cancelConfigBtn">Cancel</button>
+      <button type="button" class="btn btn-primary" id="saveConfigBtn">Save & Connect</button>
     </div>
   </dialog>
 

@@ -112,6 +112,7 @@ export function buildClefState(input) {
             },
             activity_timeline: activityTimeline,
             transaction_records: transactionRecords,
+            real_cv_metrics: visual_context.real_cv_metrics,
         },
         narrative_context: narrativeParts.join('\n'),
         frame_references: visual_context.frames,

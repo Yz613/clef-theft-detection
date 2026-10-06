@@ -21,6 +21,13 @@ export class ClefClient {
     isUsingSimulator() {
         return this.forceSimulator || !this.accountId || !this.apiToken;
     }
+    setCredentials(accountId, apiToken, model) {
+        this.accountId = accountId;
+        this.apiToken = apiToken;
+        if (model)
+            this.model = model;
+        this.forceSimulator = !accountId || !apiToken;
+    }
     /**
      * Run decision inference against Clef model
      */
