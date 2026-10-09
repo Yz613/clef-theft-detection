@@ -1,272 +1,118 @@
-# Clef Grocery Checkout Shrink Detection
+# Clef Store Guard — Universal Data Theft & Exception Scanner
 
-A production-grade checkout-loss detection service powered by **Cloudflare Clef** (`@cf/cloudflare/clef`), designed specifically for grocery retail loss prevention across cashier-operated lanes and self-checkout (SCO) stations.
-
----
-
-## 🎯 Core Architectural Principles
-
-1. **No Forcible Boolean Decisions (`theft = true / false`)**:
-   Instead of forcing every ambiguous visual event into a binary theft verdict, Clef classifies observable behaviors and estimates fine-grained probabilities.
-
-2. **Tiered Probability Separation**:
-   ```text
-   Observable Behavior  ──►  Transaction Consistency  ──►  Loss Probability  ──►  Intent Probability  ──►  Human Review
-   (What happened?)          (Did POS record it?)          (Was merchandise unpaid?)   (Was it deliberate?)
-   ```
-   - **Observable Behavior Probability**: Visual evaluation of the physical motion (e.g. `skip_scan: 0.96`, `quantity_mismatch: 0.71`).
-   - **Loss Probability**: Likelihood that merchandise exited without payment (`unscanned_merchandise: 0.81`).
-   - **Intent Probability**: Evaluated separately under a strictly higher evidentiary threshold (`intentional_shrink: 0.64`).
-
-3. **Strict Evidence Integrity**:
-   Unsupported categories are **never** populated with invented zeroes. If evidence is unavailable (e.g. barcode switching without POS item recognition), the service returns:
-   ```json
-   {
-     "probability": null,
-     "evidence_available": false
-   }
-   ```
-   *`0.02` means: We observed the checkout event and believe it probably did not happen.*
-   *`null` means: We do not have sufficient information to evaluate this event.*
-
-4. **Zero General-Purpose LLM Theft Decisions**:
-   All final probabilistic decision gates are executed by Cloudflare Clef (`@cf/cloudflare/clef` / `@cf/cloudflare/clef-flash`) using typed `noul` questions in a single forward pass.
+**Cloudflare Clef Multi-Modal Decision Model for Retail Loss Prevention & Anomaly Detection**  
+Deployed live on Cloudflare Workers edge: **`https://clef-theft-detection.yehudazahler.workers.dev`**
 
 ---
 
-## 🏗️ System Architecture
+## 🎯 What This Tool Does
 
-```text
-       ┌────────────────────────┐
-       │ Checkout CCTV Camera   │
-       └───────────┬────────────┘
-                   │
-                   ▼
-       ┌────────────────────────────────────────────────────────┐
-       │ Video Pipeline & Activity Window Segmentation          │
-       │ (before interaction, approach, scan, bag, cart, exit)  │
-       └───────────┬────────────────────────────────────────────┘
-                   │
-                   ▼
-       ┌────────────────────────────────────────────────────────┐
-       │ Object Tracker: Merchandise Trajectory Model           │
-       │ Track IDs: item_1, item_2...                           │
-       │ Path: CART ─► HAND ─► SCANNER ─► BAG (Valid)           │
-       │ Path: CART ─► HAND ─► BAG (Bypass Anomaly)             │
-       └───────────┬────────────────────────────────────────────┘
-                   │
-                   ├──────────────────────────────────┐
-                   │                                  │
-                   ▼                                  ▼
-      ┌─────────────────────────┐       ┌───────────────────────────┐
-      │ Phase 1: Visual State   │       │ Phase 2: T-Log / POS      │
-      │ Multimodal Context      │       │ Temporal Correlation      │
-      │ (Frames, Trajectories)  │       │ (±3.5s Scan / PLU Match)  │
-      └────────────┬────────────┘       └─────────────┬─────────────┘
-                   │                                  │
-                   └─────────────────┬────────────────┘
-                                     │
-                                     ▼
-                    ┌─────────────────────────────────┐
-                    │ Cloudflare Clef Decision Model  │
-                    │      @cf/cloudflare/clef        │
-                    │ System One Typed noul Questions │
-                    └────────────────┬────────────────┘
-                                     │
-                                     ▼
-                    ┌─────────────────────────────────┐
-                    │ Probabilistic Shrink Classifier │
-                    │ Behavior, Loss, Intent, Alerts  │
-                    └────────────────┬────────────────┘
-                                     │
-                                     ▼
-                    ┌─────────────────────────────────┐
-                    │ Interactive LP Review Dashboard │
-                    │ Reviewer Decisions & Labels     │
-                    └─────────────────────────────────┘
-```
+Clef Store Guard lets investigators and store operators:
+1. **Input Any Data or Files**: Upload any file (CSV, TSV, JSON, JSONL, TXT, LOG, POSLog XML, etc.) or paste arbitrary text records directly into the built-in editor.
+2. **Type What You Want Clef to Look For**: Instruct Clef in natural language with custom criteria (e.g., *"Find cashiers who scanned expensive meats, voided them, and typed produce PLUs like bananas"*, *"Look for completed cash transactions post-voided"*, *"Find drawer openings adjacent to voids"*).
+3. **Crunch That Exact Data with Cloudflare Clef**: Cloudflare's `@cf/cloudflare/clef-flash` (9B) and `@cf/cloudflare/clef` (27B) multimodal decision models execute on Cloudflare Workers AI edge, evaluating System One typed decision questions (`matches_user_criteria`, `severity`, `investigation_priority`) to rank and explain matched incidents with exact receipts and CCTV review recommendations.
 
 ---
 
-## 📋 Event Taxonomy
+## 🌐 Live Deployed Application
 
-### Phase 1A — Cashier Lanes
-- **Fake Scan / Scan Bypass** (`fake_scan`): Hand mimics scan motion without presenting barcode.
-- **Pass-Around** (`pass_around`): Item routed around side of scanner rather than across window.
-- **Multi-Item / Partial Scan** (`quantity_mismatch`): Multiple units handled, fewer scans observed.
-- **Item Left in Cart** (`item_left_in_cart`): Merchandise left in main basket, child seat, or bottom tray.
-- **Bottom-of-Basket (BOB)** (`bottom_of_basket`): Untouched items on cart lower rack exiting lane.
-- **Unscanned Handoff** (`unscanned_handoff`): Cashier transfers merchandise directly to customer without scan.
-- **Sweethearting Collusion** (`sweethearting`): Repeated deliberate bypasses & collusion patterns.
-- **Concealed Cart Item** (`concealed_item`): Merchandise hidden under bags, boxes, or personal items.
-
-### Phase 1B — Self-Checkout (SCO)
-- **Skip Scan** (`skip_scan`): Merchandise moved from cart to bag bypassing scanner.
-- **Fake Scan** (`fake_scan`): Ineffective presentation followed by immediate bagging.
-- **Pass-Around** (`pass_around`): Routing merchandise around scanner perimeter.
-- **Multi-Item Skip Scan** (`quantity_mismatch`): 3 cans handled, 1 scan interaction.
-- **Product Stacking** (`product_stacking`): Two products held together during one scan.
-- **Direct-to-Bag / Bagging Without Scan** (`bagging_without_scan`): Placement into bag without scanner interaction.
-- **Walk-Off / Nonpayment** (`walkoff`): Customer leaves SCO area with merchandise without completing checkout.
-
-### Phase 2 — POS / T-Log Correlation
-- **Time Alignment**: Correlates visual item crossing scanner (`14:03:21.4`) with POS scan events (`14:03:20.9 UPC 12345`).
-- **Produce / PLU Fraud** (`plu_visual_mismatch`): Organic Honeycrisp apples rung as 4011 bananas.
-- **Visible Item Without Scan** (`visible_item_without_scan`): Physical item crossed with no matching POS scan.
-- **Ghost Scans** (`scan_without_visible_item`): POS entry without physical merchandise interaction.
-- **Quantity Discrepancy** (`visual_pos_quantity_mismatch`): Physical items count vs POS quantity mismatch.
-- **Post-Scan Voids & Deletes** (`post_scan_void`, `post_scan_delete`): Item voided while departing with customer.
+- **Live URL**: [https://clef-theft-detection.yehudazahler.workers.dev](https://clef-theft-detection.yehudazahler.workers.dev)
+- **Edge Architecture**: Cloudflare Workers with Workers AI (`env.AI`) binding + Cloudflare Assets.
 
 ---
 
-## 💻 Quick Start
+## 🚀 Key Features
 
-### 1. Install & Build
-
-```bash
-# Clone repository
-cd "Clef theft detection"
-
-# Install dependencies
-npm install
-
-# Compile TypeScript
-npm run build
-
-# Run Vitest test suite (18 unit & integration tests)
-npm test
-```
-
-### 2. Run the Service & Review UI
-
-```bash
-npm start
-```
-Open **[http://localhost:3000](http://localhost:3000)** in your browser to access the interactive Review UI!
+- **Shortlist-Inspired Minimalist Interface**:
+  - Clean, distraction-free search experience modeled after `brochbuilds.com/shortlist`.
+  - Single search box with warm editorial typography (`Inter` + `JetBrains Mono`), responsive design, and light/dark theme toggle.
+  - Interactive preview card showing instant example scan results before typing.
+  - Quick-fill suggestion chips for common loss prevention investigations.
+- **Low-Friction Custom Data Input**:
+  - Slide-out drawer with 1-click sample datasets (Sweethearting Steak Voids, Post-Void Cash Pocketing, Unverified Cash Refunds, Attendant Security Overrides).
+  - Drag-and-drop file upload with live size feedback or direct paste editor for raw CSV rows, JSON arrays, or terminal logs.
+  - Toggle between `@cf/cloudflare/clef-flash` (Fast 9B) and `@cf/cloudflare/clef` (Deep 27B).
+- **Clean Results View & Live Stats**:
+  - Live status ticker with 4 KPI cards: Records Checked, Flagged by Clef, Money at Risk, and Edge Latency.
+  - Sticky sidebar filters by Severity, Register / Lane, Cashier / Operator, and Pattern Type with live record counts.
+  - Filter tabs: Matches, Unsure, Cleared, and All.
+  - Row cards with exposure amount, evidence chain, CCTV review recommendations, and expandable Clef System One Decision Inspector.
+  - 1-click "Copy for Report" loss prevention brief, CSV download, and JSON export.
 
 ---
 
-## 📡 REST API Reference
+## 🛠️ API Reference
 
-### 1. Run Inference on a Checkout Event
-`POST /api/detect`
+### `POST /api/crunch`
+Crunches arbitrary data against investigator instructions.
 
-**Request Body (`CheckoutInferenceInput`):**
+**Payload (JSON or multipart/form-data):**
 ```json
 {
-  "event_id": "evt_sco_001",
-  "store_id": "store_104",
-  "lane_id": "sco_lane_03",
-  "checkout_type": "self_checkout",
-  "visual_context": {
-    "camera_position": "overhead_45deg_scanner_bagging",
-    "event_start": "14:03:18",
-    "event_end": "14:03:26",
-    "tracked_items": [
-      {
-        "id": "item_1",
-        "label": "Tide Liquid Detergent (92oz)",
-        "path": ["CART_MAIN", "HAND_CUSTOMER", "BAGGING_AREA"],
-        "scanner_interaction": false
-      }
-    ],
-    "cart_inspection": {
-      "main_basket_empty": true,
-      "lower_rack_items_detected": 0,
-      "child_seat_items_detected": 0,
-      "concealed_items_detected": 0
-    }
-  },
-  "transaction_context": null
+  "data": "tx_id,store_id,register_id,cashier_id,timestamp,event_type,item_desc,total_price\nTX_01,Store 101,Lane 02,Cashier 15,2026-10-08 14:00:00,ITEM_SCAN,Organic Ribeye Steak,45.00\nTX_01,Store 101,Lane 02,Cashier 15,2026-10-08 14:00:05,ITEM_VOID,Organic Ribeye Steak,45.00\nTX_01,Store 101,Lane 02,Cashier 15,2026-10-08 14:00:10,ITEM_MANUAL,Yellow Bananas PLU 4011,0.59",
+  "query": "Look for cashiers who scanned ribeye steak, voided it, and entered bananas",
+  "model": "@cf/cloudflare/clef-flash",
+  "min_confidence": 0.50
 }
 ```
 
-**Response (`CheckoutEventOutput`):**
+**Response:**
 ```json
 {
-  "event_id": "evt_sco_001",
-  "checkout_type": "self_checkout",
-  "overall_shrink_probability": 0.96,
-  "observable_behavior": {
-    "primary_behavior": "Skip scan",
-    "behavior_probabilities": {
-      "skip_scan": 0.96,
-      "fake_scan": 0.03,
-      "pass_around": 0.05,
-      "quantity_mismatch": 0.06,
-      "bottom_of_basket": 0.02,
-      "item_left_in_cart": 0.03,
-      "sweethearting": null,
-      "walkoff": 0.03
+  "status": "success",
+  "query": "Look for cashiers who scanned ribeye steak, voided it, and entered bananas",
+  "summary": {
+    "transactions_checked": 3,
+    "money_at_risk": 45.00,
+    "high_risk_incidents": 1,
+    "total_incidents": 1,
+    "store_integrity": "92.0% Clean",
+    "store_count": 1,
+    "cashier_count": 1,
+    "model_used": "@cf/cloudflare/clef-flash"
+  },
+  "incidents": [
+    {
+      "id": "INC_001",
+      "severity": "HIGH",
+      "title": "Scan-Then-Void Substitutions (1 items flagged)",
+      "cashier": "Cashier 15",
+      "register": "Lane 02",
+      "store": "Store 101",
+      "money_at_risk": 45.00,
+      "summary": "Matches criteria: \"Look for cashiers who scanned ribeye steak, voided it, and entered bananas\"...",
+      "what_to_do": "Inspect overhead CCTV on Lane 02 around 14:00:10. Verify if customer placed the voided items into bag.",
+      "clef_pattern": "Sweethearting & Price Substitution",
+      "clef_match_pct": "89% Match",
+      "clef_confidence": "88% Certainty",
+      "evidence_transactions": ["TX_01"]
     }
-  },
-  "loss_probability": {
-    "unscanned_merchandise_probability": 0.91
-  },
-  "intent_probability": {
-    "intentional_shrink_probability": 0.64,
-    "intent_confidence": "moderate"
-  },
-  "events": {
-    "skip_scan": { "probability": 0.96, "evidence_available": true },
-    "fake_scan": { "probability": 0.03, "evidence_available": true },
-    "bottom_of_basket": { "probability": 0.02, "evidence_available": true },
-    "sweethearting": { "probability": null, "evidence_available": false },
-    "barcode_switch": { "probability": null, "evidence_available": false }
-  },
-  "visual_evidence_quality": 0.88,
-  "review_priority": "critical",
-  "transaction_context_available": false,
-  "timeline": [
-    { "timestamp": "14:03:18", "source": "visual", "description": "Item lifted by shopper hand", "severity": "normal" },
-    { "timestamp": "14:03:20", "source": "visual", "description": "No clear optical scanner interaction", "severity": "alert" },
-    { "timestamp": "14:03:22", "source": "visual", "description": "Item deposited directly into bagging well", "severity": "alert" }
   ]
 }
 ```
 
-### 2. Submit Human Review Decision
-`POST /api/events/:id/review`
+### `GET /api/sample-data?preset=sweethearting`
+Returns pre-configured sample dataset CSV (`sweethearting`, `post_void`, `refunds`, `overrides`).
 
-**Decisions:**
-- `confirmed_loss`
-- `probably_loss`
-- `operational_error`
-- `no_loss`
-- `unclear`
-
-**Labels:**
-- `confirmed_skip_scan`
-- `confirmed_fake_scan`
-- `confirmed_sweethearting`
-- `confirmed_quantity_error`
-- `confirmed_bob`
-- `confirmed_barcode_switch`
-- `confirmed_plu_fraud`
-- `confirmed_walkoff`
-- `confirmed_void_abuse`
-- `confirmed_other_loss`
-- `accidental_miss`
-- `operational_error`
-- `not_loss`
-- `insufficient_evidence`
+### `POST /api/export/csv`
+Exports matched incident results as a downloadable CSV file.
 
 ---
 
-## 🧪 Testing & Verification
+## 💻 Local Development & Deployment
 
-The test suite runs with Vitest:
+### Cloudflare Worker Deployment
 ```bash
-npm test
+bunx wrangler deploy
 ```
-Tests cover:
-- ✅ Probabilistic separation (Behavior vs Loss vs Intent)
-- ✅ Null output preservation for unsupported categories without inventing evidence
-- ✅ Cashier Sweethearting detection
-- ✅ Bottom-of-Basket (BOB) lower cart rack detection
-- ✅ Self-checkout Skip Scan (`CART -> HAND -> BAG` path bypass)
-- ✅ Multi-item partial scan / Quantity mismatch
-- ✅ SCO Walk-off unpaid cart detection
-- ✅ Phase 2 T-Log PLU produce fraud cross-referencing
-- ✅ Clean baseline checkout verification
-- ✅ REST API endpoints and review submission workflow
+
+### Local Dev Server
+```bash
+bunx wrangler dev --port 8787
+```
+
+### Local Python Server
+```bash
+python3 start.py
+```
+Runs at `http://127.0.0.1:8080`.

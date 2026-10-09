@@ -1,1153 +1,842 @@
-// Clef Grocery Checkout Shrink Detection Frontend Controller
+// Clef Store Guard — Minimalist Decision Engine Interface
+// Inspired by Shortlist (brochbuilds.com/shortlist)
 
-let currentEvent = null;
-let currentInput = null;
-let currentDecision = null;
-let animationTimer = null;
-let selectedFile = null;
-let mediaRecorder = null;
-let recordedChunks = [];
-let webcamStream = null;
+const BASE = "";
+const $ = (id) => document.getElementById(id);
+const escH = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const usd = (v) => "$" + Number(v || 0).toFixed(2);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-document.addEventListener('DOMContentLoaded', async () => {
-  setupEventListeners();
-  setupRealVideoHandlers();
-  await checkClefStatus();
-  await loadScenarios();
-  await loadQueue();
+function toast(t) {
+  const e = $("toast");
+  if (!e) return;
+  e.textContent = t;
+  e.classList.add("show");
+  setTimeout(() => e.classList.remove("show"), 2200);
+}
+
+// -----------------------------------------------------------------------------
+// PRESETS & CONFIG
+// -----------------------------------------------------------------------------
+const LANE_CONFIGS = {
+  sweethearting: {
+    placeholder: "cashiers scanning ribeye steak, voiding it, and entering bananas",
+    defaultQuery: "Look for cashiers who scanned ribeye steak, voided it, and entered bananas",
+    dataset: "sweethearting",
+    datasetLabel: "248 records · Sweethearting",
+    plan: "Evaluates against <b>248 transaction records</b> · Clef Flash 9B · Scan-then-void detection",
+  },
+  post_void: {
+    placeholder: "completed cash transactions post-voided after customer departure",
+    defaultQuery: "Look for completed cash transactions that were post-voided shortly after customer departure",
+    dataset: "post_void",
+    datasetLabel: "190 records · Cash Till Skimming",
+    plan: "Evaluates against <b>190 cash register events</b> · Clef Flash 9B · Post-void analysis",
+  },
+  refunds: {
+    placeholder: "unverified cash refunds over $50 without receipt or manager override",
+    defaultQuery: "Find unverified cash refunds over $50 without receipt or repeated security overrides",
+    dataset: "refunds",
+    datasetLabel: "115 records · Refunds & Overrides",
+    plan: "Evaluates against <b>115 return transactions</b> · Clef Flash 9B · Exception scoring",
+  },
+  universal: {
+    placeholder: "type any pattern, policy violation, or anomaly to check...",
+    defaultQuery: "Detect any suspicious anomalies, policy violations, or exceptions in this data",
+    dataset: "sweethearting",
+    datasetLabel: "Custom data / Universal",
+    plan: "Evaluates against active dataset · Clef Flash 9B · Edge decision questions",
+  },
+};
+
+// -----------------------------------------------------------------------------
+// STATE
+// -----------------------------------------------------------------------------
+let activeLane = "sweethearting";
+let activeModel = "@cf/cloudflare/clef-flash";
+let activeDataset = "sweethearting";
+let customDataContent = null;
+let customFile = null;
+let currentResults = null;
+let activeTab = "hot";
+let manualFilters = {};
+let isRunning = false;
+let abortCtrl = null;
+let recentSearches = [];
+
+// -----------------------------------------------------------------------------
+// INITIALIZATION
+// -----------------------------------------------------------------------------
+document.addEventListener("DOMContentLoaded", () => {
+  loadRecentSearches();
+  setupLaneButtons();
+  setupSampleBox();
+  setupTryChips();
+  setupModelToggle();
+  setupThemeToggle();
+  setupDrawer();
+  setupFilters();
+  setupActions();
+  setupBackLink();
+
+  // Set initial input and plan
+  updateLane(activeLane);
 });
 
-async function checkClefStatus() {
-  try {
-    const res = await fetch('/api/status');
-    const data = await res.json();
-    const badgeText = document.getElementById('clefStatusText');
-    const badgeDot = document.getElementById('clefStatusDot');
-    if (badgeText && badgeDot) {
-      if (data.is_using_live_clef) {
-        badgeText.textContent = 'Cloudflare Live (@cf/cloudflare/clef)';
-        badgeDot.style.background = '#10b981';
-      } else {
-        badgeText.textContent = 'Local CV Engine';
-        badgeDot.style.background = '#eab308';
-      }
-    }
-  } catch (err) {
-    console.warn('Failed to fetch Clef status:', err);
-  }
+// -----------------------------------------------------------------------------
+// THEME & MODEL TOGGLES
+// -----------------------------------------------------------------------------
+function setupThemeToggle() {
+  const btn = $("themeBtn");
+  if (!btn) return;
+  btn.onclick = () => {
+    const current = document.documentElement.dataset.theme;
+    const next = current === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("clef_theme", next);
+    toast(`Switched to ${next} theme`);
+  };
 }
 
-function setupEventListeners() {
-  // Clear Queue button
-  const clearBtn = document.getElementById('clearQueueBtn');
-  if (clearBtn) {
-    clearBtn.addEventListener('click', async () => {
-      if (!confirm('Are you sure you want to clear all items from the review queue?')) return;
-      try {
-        const res = await fetch('/api/queue/clear', { method: 'POST' });
-        if (!res.ok) throw new Error('Failed to clear queue');
-        currentEvent = null;
-        currentInput = null;
-        await loadQueue();
-      } catch (err) {
-        alert('Error clearing queue: ' + err.message);
-      }
-    });
-  }
-
-  // Cloudflare Configuration Modal
-  const configModal = document.getElementById('configDialog');
-  const openConfigBtn = document.getElementById('configClefBtn');
-  const statusBadge = document.getElementById('clefStatusBadge');
-  const closeConfigBtn = document.getElementById('closeConfigBtn');
-  const cancelConfigBtn = document.getElementById('cancelConfigBtn');
-  const saveConfigBtn = document.getElementById('saveConfigBtn');
-
-  if (openConfigBtn) openConfigBtn.addEventListener('click', () => configModal.showModal());
-  if (statusBadge) statusBadge.addEventListener('click', () => configModal.showModal());
-  if (closeConfigBtn) closeConfigBtn.addEventListener('click', () => configModal.close());
-  if (cancelConfigBtn) cancelConfigBtn.addEventListener('click', () => configModal.close());
-
-  if (saveConfigBtn) {
-    saveConfigBtn.addEventListener('click', async () => {
-      const accountId = document.getElementById('cfAccountIdInput').value.trim();
-      const apiToken = document.getElementById('cfApiTokenInput').value.trim();
-      const model = document.getElementById('cfModelInput').value.trim() || '@cf/cloudflare/clef';
-      const statusMsg = document.getElementById('cfConfigStatusMsg');
-
-      if (!accountId || !apiToken) {
-        statusMsg.style.display = 'block';
-        statusMsg.style.background = 'rgba(239, 68, 68, 0.2)';
-        statusMsg.style.color = '#fca5a5';
-        statusMsg.textContent = 'Account ID and API Token are required.';
-        return;
-      }
-
-      try {
-        saveConfigBtn.disabled = true;
-        statusMsg.style.display = 'block';
-        statusMsg.style.background = 'rgba(56, 189, 248, 0.2)';
-        statusMsg.style.color = '#7dd3fc';
-        statusMsg.textContent = 'Validating and connecting to Cloudflare Workers AI...';
-
-        const res = await fetch('/api/config/clef', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accountId, apiToken, model }),
-        });
-
-        const data = await res.json();
-        saveConfigBtn.disabled = false;
-
-        if (!res.ok) throw new Error(data.error || 'Failed to save configuration');
-
-        statusMsg.style.background = 'rgba(16, 185, 129, 0.2)';
-        statusMsg.style.color = '#86efac';
-        statusMsg.textContent = 'Connected! Now querying @cf/cloudflare/clef live.';
-
-        await checkClefStatus();
-        setTimeout(() => {
-          configModal.close();
-          statusMsg.style.display = 'none';
-        }, 1200);
-      } catch (err) {
-        saveConfigBtn.disabled = false;
-        statusMsg.style.background = 'rgba(239, 68, 68, 0.2)';
-        statusMsg.style.color = '#fca5a5';
-        statusMsg.textContent = 'Error: ' + err.message;
-      }
-    });
-  }
-  document.getElementById('runScenarioBtn').addEventListener('click', async () => {
-    const sel = document.getElementById('scenarioSelect');
-    if (!sel.value) return;
-    try {
-      const res = await fetch(`/api/scenarios/${sel.value}/run`, { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to run scenario');
-      const data = await res.json();
-      await loadQueue();
-      selectEvent(data.event_id);
-    } catch (err) {
-      alert('Error running scenario: ' + err.message);
+function setupModelToggle() {
+  const btn = $("modelPill");
+  if (!btn) return;
+  btn.onclick = () => {
+    if (activeModel === "@cf/cloudflare/clef-flash") {
+      activeModel = "@cf/cloudflare/clef";
+      btn.textContent = "Clef 27B";
+      toast("Model switched to Clef 27B (Deep Reasoning)");
+    } else {
+      activeModel = "@cf/cloudflare/clef-flash";
+      btn.textContent = "Clef Flash 9B";
+      toast("Model switched to Clef Flash 9B (Ultra-fast edge)");
     }
+    updatePlanText();
+  };
+}
+
+// -----------------------------------------------------------------------------
+// LANE (MODE) SWITCHER
+// -----------------------------------------------------------------------------
+function setupLaneButtons() {
+  const laneEl = $("lane");
+  if (!laneEl) return;
+  laneEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-lane]");
+    if (!btn) return;
+    const lane = btn.dataset.lane;
+    updateLane(lane);
+  });
+}
+
+function updateLane(lane) {
+  activeLane = lane;
+  document.querySelectorAll("#lane button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.lane === lane);
   });
 
-  document.getElementById('viewClipBtn').addEventListener('click', () => {
-    openClipModal();
+  const cfg = LANE_CONFIGS[lane] || LANE_CONFIGS.sweethearting;
+  const line = $("line");
+  if (line) {
+    line.placeholder = cfg.placeholder;
+  }
+  if (!customDataContent && !customFile) {
+    activeDataset = cfg.dataset;
+    updateDatasetPill(cfg.datasetLabel);
+  }
+  updatePlanText();
+}
+
+function updateDatasetPill(label) {
+  const pill = $("datasetPill");
+  if (pill) pill.textContent = label;
+}
+
+function updatePlanText() {
+  const planEl = $("plan");
+  if (!planEl) return;
+  const cfg = LANE_CONFIGS[activeLane] || LANE_CONFIGS.sweethearting;
+  const modelShort = activeModel.includes("clef-flash") ? "Clef Flash 9B" : "Clef 27B";
+  const recordsNote = customFile ? `${customFile.name} loaded` : customDataContent ? "Custom records loaded" : cfg.datasetLabel;
+  planEl.innerHTML = `Evaluates against <b>${escH(recordsNote)}</b> · ${modelShort} · Cloudflare Workers AI edge`;
+}
+
+// -----------------------------------------------------------------------------
+// SAMPLE PREVIEW CARD
+// -----------------------------------------------------------------------------
+function setupSampleBox() {
+  const sample = $("sample");
+  if (!sample) return;
+  sample.onclick = () => {
+    updateLane("sweethearting");
+    $("line").value = LANE_CONFIGS.sweethearting.defaultQuery;
+    executeScan();
+  };
+}
+
+// -----------------------------------------------------------------------------
+// TRY CHIPS
+// -----------------------------------------------------------------------------
+function setupTryChips() {
+  document.querySelectorAll(".exb").forEach((btn) => {
+    btn.onclick = () => {
+      const q = btn.dataset.q;
+      const lane = btn.dataset.lane || "sweethearting";
+      updateLane(lane);
+      $("line").value = q;
+      executeScan();
+    };
   });
+}
 
-  document.getElementById('closeClipBtn').addEventListener('click', () => {
-    closeClipModal();
-  });
+// -----------------------------------------------------------------------------
+// BACK NAVIGATION
+// -----------------------------------------------------------------------------
+function setupBackLink() {
+  const back = $("back");
+  const home = $("brandHome");
+  const reset = () => {
+    if (isRunning) abortCtrl?.abort();
+    document.body.classList.remove("ran");
+    $("results").classList.add("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  if (back) back.onclick = reset;
+  if (home) home.onclick = (e) => { e.preventDefault(); reset(); };
+}
 
-  document.getElementById('confirmClipDoneBtn').addEventListener('click', () => {
-    closeClipModal();
-  });
-
-  document.getElementById('playPauseSimBtn').addEventListener('click', () => {
-    startClipAnimation();
-  });
-
-  document.getElementById('viewRawJsonBtn').addEventListener('click', () => {
-    openJsonModal();
-  });
-
-  document.getElementById('closeJsonBtn').addEventListener('click', () => {
-    document.getElementById('jsonDialog').close();
-  });
-
-  document.getElementById('copyJsonBtn').addEventListener('click', () => {
-    const text = document.getElementById('rawJsonViewer').textContent;
-    navigator.clipboard.writeText(text);
-    alert('Copied Clef payload to clipboard!');
-  });
-
-  // Review Decision button click handlers
-  document.querySelectorAll('.btn-decision').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      document.querySelectorAll('.btn-decision').forEach((b) => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      currentDecision = btn.dataset.decision;
-
-      // Auto-suggest matching label
-      suggestLabelForDecision(currentDecision);
-    });
-  });
-
-  // Submit Review
-  document.getElementById('submitReviewBtn').addEventListener('click', async () => {
-    if (!currentEvent) return;
-    if (!currentDecision) {
-      alert('Please select a human review decision (e.g. Confirmed Loss, Operational Error, etc.)');
+// -----------------------------------------------------------------------------
+// RUNNING THE SCAN
+// -----------------------------------------------------------------------------
+const form = $("form");
+if (form) {
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    if (isRunning) {
+      abortCtrl?.abort();
       return;
     }
+    executeScan();
+  };
+}
 
-    const label = document.getElementById('reviewLabelSelect').value;
-    const reviewerId = document.getElementById('reviewerIdInput').value || 'analyst_1';
-    const notes = document.getElementById('reviewerNotesInput').value;
+async function executeScan() {
+  const inputEl = $("line");
+  const query = (inputEl?.value || "").trim() || (LANE_CONFIGS[activeLane]?.defaultQuery || "Find retail theft anomalies");
 
-    try {
-      const res = await fetch(`/api/events/${currentEvent.event_id}/review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+  isRunning = true;
+  abortCtrl = new AbortController();
+
+  // Switch UI to ran state (collapses hero, opens results)
+  document.body.classList.add("ran");
+  $("results").classList.remove("hidden");
+  $("go").textContent = "Stop";
+  $("go").classList.add("stop");
+  $("progWrap").classList.remove("hidden");
+  $("prog").style.width = "20%";
+
+  $("lvTitle").textContent = query;
+  $("lvKick").textContent = `Clef Store Guard × Workers AI · evaluating`;
+  $("lvBarA").style.width = "30%";
+  $("lvBarB").style.width = "30%";
+
+  saveRecentSearch(query);
+
+  const t0 = performance.now();
+
+  try {
+    let res;
+    if (customFile) {
+      const fd = new FormData();
+      fd.append("file", customFile);
+      fd.append("query", query);
+      fd.append("model", activeModel);
+      fd.append("min_confidence", "0.50");
+      res = await fetch(`${BASE}/api/crunch`, { method: "POST", body: fd, signal: abortCtrl.signal });
+    } else if (customDataContent) {
+      const fd = new FormData();
+      fd.append("data", customDataContent);
+      fd.append("query", query);
+      fd.append("model", activeModel);
+      fd.append("min_confidence", "0.50");
+      res = await fetch(`${BASE}/api/crunch`, { method: "POST", body: fd, signal: abortCtrl.signal });
+    } else {
+      // Use preloaded sample dataset
+      res = await fetch(`${BASE}/api/analyze-sample`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          decision: currentDecision,
-          label,
-          reviewer_id: reviewerId,
-          notes,
+          preset: activeDataset,
+          query: query,
+          model: activeModel,
         }),
+        signal: abortCtrl.signal,
       });
-
-      if (!res.ok) throw new Error('Failed to submit review');
-      const updated = await res.json();
-      currentEvent = updated.event;
-      renderCurrentEvent(updated);
-      await loadQueue();
-      alert(`Review recorded successfully: ${label} [${currentDecision}]`);
-    } catch (err) {
-      alert('Error submitting review: ' + err.message);
-    }
-  });
-}
-
-function setupRealVideoHandlers() {
-  const dropZone = document.getElementById('dropZone');
-  const fileInput = document.getElementById('videoFileInput');
-  const dropZoneText = document.getElementById('dropZoneText');
-  const uploadBtn = document.getElementById('uploadAndAnalyzeBtn');
-  const progressText = document.getElementById('uploadProgressText');
-
-  // Trigger file browser on click
-  dropZone.addEventListener('click', () => fileInput.click());
-
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files && e.target.files[0]) {
-      selectedFile = e.target.files[0];
-      dropZoneText.textContent = `🎬 Selected: ${selectedFile.name} (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)`;
-    }
-  });
-
-  // Drag and drop events
-  dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('dragover');
-  });
-
-  dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('dragover');
-  });
-
-  dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      selectedFile = e.dataTransfer.files[0];
-      dropZoneText.textContent = `🎬 Selected: ${selectedFile.name} (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)`;
-    }
-  });
-
-  // Upload and analyze button
-  uploadBtn.addEventListener('click', async () => {
-    if (!selectedFile) {
-      alert('Please select or drop a video file (.mp4, .mov, .webm) first.');
-      return;
     }
 
-    const cType = document.getElementById('uploadCheckoutType').value;
-    const formData = new FormData();
-    formData.append('video', selectedFile);
-    formData.append('checkout_type', cType);
-
-    progressText.style.display = 'block';
-    progressText.textContent = '⏳ Uploading video & running Cloudflare Clef multimodal decision model (@cf/cloudflare/clef)...';
-    uploadBtn.disabled = true;
-
-    try {
-      const res = await fetch('/api/upload-video', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `Server responded with ${res.status}`);
-      }
-
-      const result = await res.json();
-      progressText.style.display = 'none';
-      uploadBtn.disabled = false;
-
-      // Refresh queue and select this event
-      await loadQueue();
-      selectEvent(result.event.event_id);
-
-      // Display real video in player
-      displayRealVideo(result.video_url, result.event, result.metadata);
-    } catch (err) {
-      progressText.style.display = 'none';
-      uploadBtn.disabled = false;
-      alert('Error analyzing video: ' + err.message);
-    }
-  });
-
-  // Built-in Sample Real Video buttons
-  document.getElementById('sampleSkipScanBtn').addEventListener('click', () => {
-    runSampleRealVideo('real_skip_scan', 'self_checkout');
-  });
-
-  document.getElementById('sampleLegitScanBtn').addEventListener('click', () => {
-    runSampleRealVideo('real_legitimate_scan', 'self_checkout');
-  });
-
-  document.getElementById('sampleBobBtn').addEventListener('click', () => {
-    runSampleRealVideo('real_bob_case', 'cashier');
-  });
-
-  // Webcam recording modal setup
-  setupWebcamModal();
-}
-
-async function runSampleRealVideo(sampleId, checkoutType) {
-  const progressText = document.getElementById('uploadProgressText');
-  progressText.style.display = 'block';
-  progressText.textContent = `⏳ Processing real MP4 video sample (${sampleId}) with Cloudflare Clef (@cf/cloudflare/clef)...`;
-
-  try {
-    const res = await fetch('/api/process-sample-video', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sample_id: sampleId, checkout_type: checkoutType }),
-    });
+    $("prog").style.width = "75%";
+    $("lvBarA").style.width = "80%";
+    $("lvBarB").style.width = "80%";
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Failed to process sample video');
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server responded with ${res.status}`);
     }
 
-    const result = await res.json();
-    progressText.style.display = 'none';
+    const data = await res.json();
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
 
-    await loadQueue();
-    selectEvent(result.event.event_id);
-    displayRealVideo(result.video_url, result.event, result.metadata);
+    $("prog").style.width = "100%";
+    $("lvBarA").style.width = "100%";
+    $("lvBarB").style.width = "100%";
+    $("lvTime").textContent = `${elapsed}s`;
+    $("lvModel").textContent = activeModel.replace("@cf/cloudflare/", "");
+    $("lvKick").textContent = `Clef Store Guard × Workers AI · complete (${elapsed}s)`;
+
+    setTimeout(() => {
+      $("progWrap").classList.add("hidden");
+    }, 400);
+
+    renderResults(data);
   } catch (err) {
-    progressText.style.display = 'none';
-    alert('Error running sample video: ' + err.message);
-  }
-}
-
-function displayRealVideo(videoUrl, eventOutput, metadata) {
-  const card = document.getElementById('realVideoPlayerCard');
-  const video = document.getElementById('realVideoPlayer');
-  const title = document.getElementById('videoPlayerTitle');
-  const metaBadge = document.getElementById('videoMetaBadge');
-  const timeDisplay = document.getElementById('videoPlaybackTime');
-  const keyframesBox = document.getElementById('keyframesContainer');
-
-  card.style.display = 'block';
-  video.src = videoUrl;
-
-  const durationStr = metadata ? `${metadata.duration_seconds}s` : '5.0s';
-  const fpsStr = metadata ? `${metadata.fps} FPS` : '30 FPS';
-  metaBadge.textContent = `${durationStr} | ${fpsStr} | ${metadata?.width || 854}x${metadata?.height || 480}`;
-  title.textContent = `📹 Real Footage: ${videoUrl.split('/').pop()} (${eventOutput.observable_behavior.primary_behavior})`;
-
-  video.addEventListener('timeupdate', () => {
-    const cur = video.currentTime.toFixed(1);
-    const dur = (video.duration || 0).toFixed(1);
-    timeDisplay.textContent = `${cur}s / ${dur}s`;
-  });
-
-  // Populate Keyframe Gallery
-  keyframesBox.innerHTML = '';
-  const frames = eventOutput?.visual_context?.frames || [];
-  if (frames.length > 0) {
-    frames.forEach((fUrl, fIdx) => {
-      const kCard = document.createElement('div');
-      kCard.className = 'keyframe-card';
-      const label = fIdx === 0 ? 'Approach' : fIdx === 1 ? 'Interaction / Bypass' : fIdx === 2 ? 'Bagging' : 'Cart / Departure';
-      kCard.innerHTML = `
-        <img src="/${fUrl}" alt="Keyframe ${fIdx + 1}" onerror="this.style.display='none'">
-        <div class="keyframe-label">${label} (Frame ${fIdx + 1})</div>
-      `;
-      keyframesBox.appendChild(kCard);
-    });
-  } else {
-    keyframesBox.innerHTML = '<span style="font-size:0.75rem; color:var(--text-dim);">No keyframe images</span>';
-  }
-
-  // Scroll smoothly to player
-  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function setupWebcamModal() {
-  const modal = document.getElementById('webcamDialog');
-  const openBtn = document.getElementById('recordWebcamBtn');
-  const closeBtn = document.getElementById('closeWebcamBtn');
-  const cancelBtn = document.getElementById('cancelWebcamBtn');
-  const startRecBtn = document.getElementById('startRecordingBtn');
-  const liveVideo = document.getElementById('webcamLiveVideo');
-  const countdownText = document.getElementById('recordCountdownText');
-
-  openBtn.addEventListener('click', async () => {
-    try {
-      webcamStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 360 } });
-      liveVideo.srcObject = webcamStream;
-      modal.showModal();
-    } catch (err) {
-      alert('Could not access webcam: ' + err.message);
+    if (err.name === "AbortError") {
+      toast("Scan stopped by user.");
+      $("lvKick").textContent = `Clef Store Guard · stopped`;
+    } else {
+      console.error("Scan error:", err);
+      toast("Scan error: " + err.message);
+      $("lvKick").textContent = `Clef Store Guard · error`;
     }
-  });
-
-  function stopWebcam() {
-    if (webcamStream) {
-      webcamStream.getTracks().forEach((t) => t.stop());
-      webcamStream = null;
-    }
-    modal.close();
-  }
-
-  closeBtn.addEventListener('click', stopWebcam);
-  cancelBtn.addEventListener('click', stopWebcam);
-
-  startRecBtn.addEventListener('click', () => {
-    if (!webcamStream) return;
-    recordedChunks = [];
-    try {
-      mediaRecorder = new MediaRecorder(webcamStream, { mimeType: 'video/webm' });
-    } catch {
-      mediaRecorder = new MediaRecorder(webcamStream);
-    }
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) recordedChunks.push(e.data);
-    };
-
-    mediaRecorder.onstop = async () => {
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
-      const file = new File([blob], `webcam_record_${Date.now()}.webm`, { type: 'video/webm' });
-      selectedFile = file;
-      document.getElementById('dropZoneText').textContent = `📹 Recorded: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
-      stopWebcam();
-
-      // Trigger automatic analysis
-      document.getElementById('uploadAndAnalyzeBtn').click();
-    };
-
-    mediaRecorder.start();
-    startRecBtn.disabled = true;
-
-    let secondsLeft = 5;
-    countdownText.textContent = `🔴 RECORDING: ${secondsLeft}s remaining... (perform checkout motion)`;
-    const timer = setInterval(() => {
-      secondsLeft--;
-      if (secondsLeft <= 0) {
-        clearInterval(timer);
-        countdownText.textContent = 'Processing recording...';
-        mediaRecorder.stop();
-        startRecBtn.disabled = false;
-      } else {
-        countdownText.textContent = `🔴 RECORDING: ${secondsLeft}s remaining...`;
-      }
-    }, 1000);
-  });
-}
-
-async function loadScenarios() {
-  try {
-    const res = await fetch('/api/scenarios');
-    const scenarios = await res.json();
-    const select = document.getElementById('scenarioSelect');
-    select.innerHTML = '<option value="">-- Load Benchmark Scenario --</option>';
-
-    scenarios.forEach((s) => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = `[${s.phase}] ${s.name}`;
-      select.appendChild(opt);
-    });
-  } catch (err) {
-    console.error('Failed to load scenarios:', err);
+  } finally {
+    isRunning = false;
+    abortCtrl = null;
+    $("go").textContent = "Scan with Clef";
+    $("go").classList.remove("stop");
+    $("progWrap").classList.add("hidden");
   }
 }
 
-async function loadQueue() {
-  try {
-    const res = await fetch('/api/events');
-    const items = await res.json();
-    const list = document.getElementById('queueList');
-    const count = document.getElementById('queueCount');
-    list.innerHTML = '';
-    count.textContent = `${items.length} items`;
+// -----------------------------------------------------------------------------
+// RENDER FINDINGS & RESULTS
+// -----------------------------------------------------------------------------
+function renderResults(data) {
+  currentResults = data;
+  manualFilters = {};
+  activeTab = "hot";
 
-    if (items.length === 0) {
-      list.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 20px 10px; text-align: center; line-height: 1.5;">Queue is empty.<br><span style="font-size:0.75rem; color: #38bdf8;">Upload or drop an MP4 video above to run detection.</span></div>';
-      renderEmptyWorkspace();
+  const sum = data.summary || {};
+  const incidents = data.incidents || [];
+
+  // Update live stat cards
+  $("lvFound").textContent = Number(sum.records_checked || 0).toLocaleString();
+  $("lvRecordNote").textContent = `${sum.data_integrity || "100%"} clean records`;
+
+  $("lvChecked").textContent = (sum.total_incidents || incidents.length).toString();
+  $("lvMatch").textContent = `${incidents.length} ${plural(incidents.length, "match", "matches")} passed criteria`;
+
+  $("lvImpact").textContent = sum.total_impact_formatted || usd(sum.total_impact || 0);
+  $("lvImpactLbl").textContent = sum.impact_label || "Money at risk";
+
+  drawFilters();
+  drawResultsList();
+}
+
+// -----------------------------------------------------------------------------
+// FILTERING & VERDICTS
+// -----------------------------------------------------------------------------
+function verdict(inc) {
+  const sev = (inc.severity || "").toUpperCase();
+  if (sev === "CRITICAL" || sev === "HIGH") return "hot";
+  if (sev === "MEDIUM") return "maybe";
+  return "no";
+}
+
+function passesFilters(inc) {
+  for (const [key, val] of Object.entries(manualFilters)) {
+    if (!val) continue;
+    if (key === "severity" && inc.severity !== val) return false;
+    if (key === "context" && inc.context !== val) return false;
+    if (key === "entity" && inc.entity !== val) return false;
+    if (key === "pattern" && inc.clef_pattern !== val) return false;
+  }
+  return true;
+}
+
+function getFilteredList() {
+  if (!currentResults || !currentResults.incidents) return [];
+  return currentResults.incidents.filter(passesFilters);
+}
+
+// -----------------------------------------------------------------------------
+// DRAW FILTERS SIDEBAR
+// -----------------------------------------------------------------------------
+function setupFilters() {
+  const side = $("side");
+  if (!side) return;
+
+  side.addEventListener("click", (e) => {
+    const t = e.target.closest("button");
+    if (!t) return;
+    if (t.id === "clearAll") {
+      manualFilters = {};
+      drawFilters();
+      drawResultsList();
       return;
     }
-
-    items.forEach((item) => {
-      const ev = item.event;
-      const el = document.createElement('div');
-      el.className = `queue-item ${currentEvent && currentEvent.event_id === ev.event_id ? 'active' : ''}`;
-      el.dataset.id = ev.event_id;
-
-      const scoreClass =
-        ev.overall_shrink_probability >= 0.85
-          ? 'score-critical'
-          : ev.overall_shrink_probability >= 0.70
-          ? 'score-high'
-          : ev.overall_shrink_probability >= 0.40
-          ? 'score-medium'
-          : 'score-low';
-
-      const pct = Math.round(ev.overall_shrink_probability * 100);
-
-      el.innerHTML = `
-        <div class="queue-header">
-          <span class="queue-id">${ev.event_id}</span>
-          <span class="queue-score ${scoreClass}">${pct}%</span>
-        </div>
-        <div class="queue-title">${ev.observable_behavior.primary_behavior}</div>
-        <div class="queue-tags">
-          <span class="tag">${ev.checkout_type === 'cashier' ? 'Cashier' : 'SCO'}</span>
-          <span class="tag">${item.status === 'reviewed' ? '✓ ' + (item.review ? item.review.decision : 'Reviewed') : 'Pending'}</span>
-        </div>
-      `;
-
-      el.addEventListener('click', () => {
-        selectEvent(ev.event_id);
-      });
-
-      list.appendChild(el);
-    });
-
-    if (!currentEvent && items.length > 0) {
-      selectEvent(items[0].event.event_id);
+    if (t.dataset.k) {
+      const k = t.dataset.k;
+      const v = t.dataset.v || null;
+      manualFilters[k] = v;
+      drawFilters();
+      drawResultsList();
     }
-  } catch (err) {
-    console.error('Failed to load review queue:', err);
-  }
+  });
+
+  $("filtersBtn").onclick = () => {
+    side.classList.toggle("open");
+  };
+  $("sideDone").onclick = () => {
+    side.classList.remove("open");
+    document.querySelector(".main")?.scrollIntoView({ behavior: "smooth" });
+  };
 }
 
-async function selectEvent(eventId) {
-  try {
-    const res = await fetch(`/api/events/${eventId}`);
-    if (!res.ok) throw new Error('Event not found');
-    const item = await res.json();
-    currentEvent = item.event;
-    currentInput = item.input;
-    renderCurrentEvent(item);
+function drawFilters() {
+  const all = (currentResults && currentResults.incidents) || [];
+  const groupsEl = $("groups");
+  if (!groupsEl) return;
 
-    // If this item has a real video attached, show it in the video player
-    if (item.input?.visual_context?.video && (item.input.visual_context.video.endsWith('.mp4') || item.input.visual_context.video.endsWith('.webm'))) {
-      const videoPath = item.input.visual_context.video.startsWith('/')
-        ? item.input.visual_context.video
-        : `/${item.input.visual_context.video}`;
-      displayRealVideo(videoPath, item.event, null);
-    }
+  // Counts for Severity
+  const sevs = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+  const sevCounts = {};
+  sevs.forEach((s) => (sevCounts[s] = all.filter((i) => i.severity === s).length));
 
-    // Update active class in list
-    document.querySelectorAll('.queue-item').forEach((q) => {
-      q.classList.toggle('active', q.dataset.id === eventId);
-    });
-  } catch (err) {
-    console.error('Failed to load event details:', err);
+  // Counts for Register / Lane (context)
+  const contextCounts = {};
+  all.forEach((i) => {
+    if (i.context) contextCounts[i.context] = (contextCounts[i.context] || 0) + 1;
+  });
+
+  // Counts for Cashier / Entity
+  const entityCounts = {};
+  all.forEach((i) => {
+    if (i.entity) entityCounts[i.entity] = (entityCounts[i.entity] || 0) + 1;
+  });
+
+  // Counts for Pattern
+  const patternCounts = {};
+  all.forEach((i) => {
+    if (i.clef_pattern) patternCounts[i.clef_pattern] = (patternCounts[i.clef_pattern] || 0) + 1;
+  });
+
+  const curSev = manualFilters.severity || "";
+  const curCtx = manualFilters.context || "";
+  const curEnt = manualFilters.entity || "";
+  const curPat = manualFilters.pattern || "";
+
+  let html = `
+    <div class="group">
+      <div class="gtitle">Severity</div>
+      <button type="button" class="opt ${!curSev ? "on" : ""}" data-k="severity" data-v=""><span class="lab">Any</span><span class="n">${all.length}</span></button>
+      ${sevs.map((s) => `
+        <button type="button" class="opt ${curSev === s ? "on" : ""} ${sevCounts[s] === 0 ? "zero" : ""}" data-k="severity" data-v="${s}">
+          <span class="lab">${s}</span><span class="n">${sevCounts[s]}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+
+  if (Object.keys(contextCounts).length > 1) {
+    html += `
+      <div class="group">
+        <div class="gtitle">Register / Lane</div>
+        <button type="button" class="opt ${!curCtx ? "on" : ""}" data-k="context" data-v=""><span class="lab">Any</span><span class="n">${all.length}</span></button>
+        ${Object.entries(contextCounts).map(([c, count]) => `
+          <button type="button" class="opt ${curCtx === c ? "on" : ""}" data-k="context" data-v="${escH(c)}">
+            <span class="lab">${escH(c)}</span><span class="n">${count}</span>
+          </button>
+        `).join("")}
+      </div>
+    `;
   }
+
+  if (Object.keys(entityCounts).length > 1) {
+    html += `
+      <div class="group">
+        <div class="gtitle">Cashier / Entity</div>
+        <button type="button" class="opt ${!curEnt ? "on" : ""}" data-k="entity" data-v=""><span class="lab">Any</span><span class="n">${all.length}</span></button>
+        ${Object.entries(entityCounts).slice(0, 6).map(([e, count]) => `
+          <button type="button" class="opt ${curEnt === e ? "on" : ""}" data-k="entity" data-v="${escH(e)}">
+            <span class="lab">${escH(e)}</span><span class="n">${count}</span>
+          </button>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  if (Object.keys(patternCounts).length > 1) {
+    html += `
+      <div class="group">
+        <div class="gtitle">Pattern Type</div>
+        <button type="button" class="opt ${!curPat ? "on" : ""}" data-k="pattern" data-v=""><span class="lab">Any</span><span class="n">${all.length}</span></button>
+        ${Object.entries(patternCounts).map(([p, count]) => `
+          <button type="button" class="opt ${curPat === p ? "on" : ""}" data-k="pattern" data-v="${escH(p)}">
+            <span class="lab">${escH(p)}</span><span class="n">${count}</span>
+          </button>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  groupsEl.innerHTML = html;
+
+  const hasFilter = Object.values(manualFilters).some(Boolean);
+  $("clearAll").classList.toggle("hidden", !hasFilter);
+  $("filtersBtn").textContent = hasFilter ? `Filters · on` : `Filters`;
 }
 
-function renderEmptyWorkspace() {
-  currentEvent = null;
-  currentInput = null;
-  currentDecision = null;
-  document.getElementById('heroEventId').textContent = 'No Event Selected';
-  const prioBadge = document.getElementById('heroPriorityBadge');
-  prioBadge.textContent = 'READY';
-  prioBadge.className = 'status-pill score-low';
-  const typeBadge = document.getElementById('heroCheckoutTypeBadge');
-  typeBadge.textContent = 'AWAITING VIDEO';
-  const autoLaneBadge = document.getElementById('heroAutoLaneBadge');
-  if (autoLaneBadge) autoLaneBadge.textContent = 'AUTO-DETECT';
+// -----------------------------------------------------------------------------
+// DRAW RESULTS LIST & TABS
+// -----------------------------------------------------------------------------
+function drawResultsList() {
+  const vis = getFilteredList();
+  const c = { hot: 0, maybe: 0, no: 0 };
+  vis.forEach((i) => c[verdict(i)]++);
 
-  const theftBanner = document.getElementById('heroTheftAlertBanner');
-  if (theftBanner) theftBanner.innerHTML = '';
+  // Render tabs
+  const tabsEl = $("tabs");
+  tabsEl.innerHTML = [
+    ["hot", "Matches", c.hot],
+    ["maybe", "Unsure", c.maybe],
+    ["no", "Cleared", c.no],
+    ["all", "All", vis.length],
+  ].map(([k, label, count]) => `
+    <button type="button" class="tab ${activeTab === k ? "on" : ""}" data-tab="${k}">
+      ${label}<span>${count}</span>
+    </button>
+  `).join("");
 
-  const theftCountBadge = document.getElementById('multiTheftCountBadge');
-  if (theftCountBadge) {
-    theftCountBadge.textContent = '0 DETECTED';
-    theftCountBadge.className = 'status-pill score-low';
-  }
-
-  const laneExpl = document.getElementById('laneTypeExplanationText');
-  if (laneExpl) laneExpl.textContent = 'Lane: Awaiting Ingestion...';
-
-  const grid = document.getElementById('retailerTheftGrid');
-  if (grid) grid.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 16px; text-align: center; grid-column: 1 / -1;">No video loaded. Upload a video above to auto-detect lane and evaluate the 8 theft categories.</div>';
-
-  document.getElementById('heroStoreLane').textContent = 'Lane: -- | Store: --';
-  document.getElementById('heroTimestamp').textContent = 'Awaiting Ingestion';
-  document.getElementById('heroPosStatus').textContent = 'Phase 1 Ready';
-  document.getElementById('heroExplanation').textContent =
-    'No videos in the queue. Drop an MP4, MOV, or WEBM video in the ingestion panel above, or record webcam footage, to extract computer vision motion trajectories and run Clef probabilistic shrink estimation.';
-
-  document.getElementById('gaugeLossLikelihood').textContent = '--%';
-  document.getElementById('gaugeLossLikelihood').style.color = 'var(--text-muted)';
-  document.getElementById('gaugeIntent').textContent = '--%';
-  document.getElementById('gaugeQuality').textContent = '--%';
-  document.getElementById('primaryBehaviorBadge').textContent = 'Primary: None';
-
-  document.getElementById('behaviorProbList').innerHTML =
-    '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 16px; text-align: center;">No active behavioral evaluation. Ingest a video above to begin.</div>';
-  document.getElementById('trajectoryPathContainer').innerHTML =
-    '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 16px; text-align: center;">No motion trajectory recorded yet.</div>';
-  document.getElementById('trajectoryAnomaliesCount').textContent = '--';
-  document.getElementById('timelineList').innerHTML =
-    '<div style="color: var(--text-dim); font-size: 0.85rem; padding: 16px; text-align: center;">Timeline empty.</div>';
-
-  const playerCard = document.getElementById('realVideoPlayerCard');
-  if (playerCard) playerCard.style.display = 'none';
-}
-
-function renderCurrentEvent(item) {
-  const ev = item.event;
-  const review = item.review;
-
-  // Hero Meta
-  document.getElementById('heroEventId').textContent = ev.event_id;
-
-  const prioBadge = document.getElementById('heroPriorityBadge');
-  prioBadge.textContent = ev.review_priority.toUpperCase();
-  prioBadge.className = `status-pill ${
-    ev.review_priority === 'critical' ? 'score-critical' :
-    ev.review_priority === 'high' ? 'score-high' :
-    ev.review_priority === 'medium' ? 'score-medium' : 'score-low'
-  }`;
-
-  const typeBadge = document.getElementById('heroCheckoutTypeBadge');
-  const isCashier = ev.checkout_type === 'cashier' || ev.detected_checkout_type === 'cashier';
-  typeBadge.textContent = isCashier ? 'MANNED CASHIER LANE' : 'SELF-CHECKOUT (SCO)';
-
-  const autoLaneBadge = document.getElementById('heroAutoLaneBadge');
-  if (autoLaneBadge) {
-    const conf = Math.round((ev.checkout_type_confidence || 0.95) * 100);
-    autoLaneBadge.textContent = `AUTO: ${isCashier ? 'MANNED' : 'SCO'} (${conf}%)`;
-    autoLaneBadge.className = 'status-pill score-medium';
-  }
-
-  const laneExpl = document.getElementById('laneTypeExplanationText');
-  if (laneExpl) {
-    laneExpl.textContent = ev.lane_classification_evidence || 'Automated Station Geometry Classification';
-  }
-
-  // Render Multi-Theft Notification Banner
-  const theftBanner = document.getElementById('heroTheftAlertBanner');
-  const detectedThefts = ev.detected_theft_types || [];
-  const theftCountBadge = document.getElementById('multiTheftCountBadge');
-  if (theftCountBadge) {
-    theftCountBadge.textContent = `${detectedThefts.length} DETECTED`;
-    theftCountBadge.className = `status-pill ${detectedThefts.length > 0 ? 'score-critical' : 'score-low'}`;
-  }
-
-  if (theftBanner) {
-    if (detectedThefts.length > 1) {
-      theftBanner.innerHTML = `
-        <span class="status-pill score-critical" style="font-size: 0.82rem; font-weight: 700; padding: 4px 10px;">
-          🚨 MULTIPLE THEFTS DETECTED (${detectedThefts.length})
-        </span>
-        ${detectedThefts.map((t) => `<span class="status-pill score-high" style="font-size: 0.78rem;">${t}</span>`).join('')}
-      `;
-    } else if (detectedThefts.length === 1) {
-      theftBanner.innerHTML = `
-        <span class="status-pill score-critical" style="font-size: 0.82rem; font-weight: 700; padding: 4px 10px;">
-          ⚠️ THEFT DETECTED
-        </span>
-        <span class="status-pill score-high" style="font-size: 0.78rem;">${detectedThefts[0]}</span>
-      `;
-    } else {
-      theftBanner.innerHTML = `
-        <span class="status-pill score-low" style="font-size: 0.82rem; font-weight: 700; padding: 4px 10px; background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4);">
-          ✅ CLEAN TRANSACTION — ZERO SHRINK DETECTED
-        </span>
-      `;
-    }
-  }
-
-  document.getElementById('heroStoreLane').textContent = `Lane: ${ev.lane_id || 'SCO-01'} | Store: ${ev.store_id || 'Store 104'}`;
-  document.getElementById('heroTimestamp').textContent = `Observed: ${ev.timestamp}`;
-  document.getElementById('heroPosStatus').textContent = ev.transaction_context_available ? 'POS: Correlated (T-Log)' : 'POS: Visual Only (Phase 1)';
-  document.getElementById('heroExplanation').textContent = ev.explanation;
-
-  // Gauges
-  const lossPct = Math.round(ev.overall_shrink_probability * 100);
-  document.getElementById('gaugeLossLikelihood').textContent = `${lossPct}%`;
-  document.getElementById('gaugeLossLikelihood').style.color = lossPct >= 70 ? 'var(--danger)' : lossPct >= 40 ? 'var(--warning)' : 'var(--success)';
-
-  const intentProb = ev.intent_probability.intentional_shrink_probability;
-  document.getElementById('gaugeIntent').textContent = intentProb !== null ? `${Math.round(intentProb * 100)}%` : 'N/A';
-
-  const qualProb = ev.visual_evidence_quality;
-  document.getElementById('gaugeQuality').textContent = `${Math.round(qualProb * 100)}%`;
-
-  // Primary behavior badge
-  document.getElementById('primaryBehaviorBadge').textContent = `Primary: ${ev.observable_behavior.primary_behavior}`;
-
-  // Render Retailer 8-Theft Categories Grid
-  renderRetailerTheftGrid(ev);
-
-  // Behavior Probabilities List
-  renderBehaviorProbabilities(ev);
-
-  // Trajectory Path
-  renderTrajectory(item.input);
-
-  // Timeline
-  renderTimeline(ev.timeline);
-
-  // Review status
-  const revStatusEl = document.getElementById('currentReviewStatus');
-  if (item.status === 'reviewed' && review) {
-    revStatusEl.textContent = `REVIEWED: ${review.decision.toUpperCase()} (${review.label})`;
-    revStatusEl.className = 'status-pill score-low';
-    document.getElementById('reviewerNotesInput').value = review.notes || '';
-    document.getElementById('reviewLabelSelect').value = review.label;
-
-    document.querySelectorAll('.btn-decision').forEach((btn) => {
-      btn.classList.toggle('selected', btn.dataset.decision === review.decision);
-    });
-    currentDecision = review.decision;
-  } else {
-    revStatusEl.textContent = 'PENDING REVIEW';
-    revStatusEl.className = 'status-pill score-medium';
-    document.querySelectorAll('.btn-decision').forEach((btn) => btn.classList.remove('selected'));
-    document.getElementById('reviewerNotesInput').value = '';
-    currentDecision = null;
-
-    // Suggest default label based on highest probability
-    suggestLabelFromEvent(ev);
-  }
-}
-
-function renderRetailerTheftGrid(ev) {
-  const grid = document.getElementById('retailerTheftGrid');
-  if (!grid) return;
-  grid.innerHTML = '';
-
-  const summary = ev.retailer_theft_summary;
-  if (!summary || !summary.categories) {
-    grid.innerHTML = '<span style="color:var(--text-dim); font-size:0.85rem; grid-column: 1 / -1; padding: 12px; text-align: center;">No retailer category metrics available.</span>';
-    return;
-  }
-
-  const icons = {
-    non_scan: '🚫',
-    left_in_cart: '🛒',
-    no_sale: '💵',
-    price_lookup_abuse: '🏷️',
-    suspicious_refund: '🔄',
-    canceled_transaction: '❌',
-    inventory_loss: '📦',
-    late_night_food_prep: '🍕',
+  tabsEl.onclick = (e) => {
+    const btn = e.target.closest("button[data-tab]");
+    if (!btn) return;
+    activeTab = btn.dataset.tab;
+    drawResultsList();
   };
 
-  Object.values(summary.categories).forEach((cat) => {
-    const pct = Math.round(cat.probability * 100);
-    const isDet = cat.detected;
-    const card = document.createElement('div');
-    card.style.padding = '12px 14px';
-    card.style.background = isDet ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.03)';
-    card.style.border = isDet ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid rgba(255, 255, 255, 0.07)';
-    card.style.borderRadius = 'var(--radius-md)';
-    card.style.transition = 'all 0.2s ease';
+  // Filter by active tab
+  const items = vis.filter((i) => activeTab === "all" || verdict(i) === activeTab);
 
-    const color = isDet ? 'var(--danger)' : pct >= 30 ? 'var(--warning)' : 'var(--success)';
-    const badgeClass = isDet ? 'score-critical' : 'score-low';
-    const badgeText = isDet ? 'DETECTED' : 'CLEAR';
-    const icon = icons[cat.key] || '⚠️';
+  $("count").innerHTML = `${plural(items.length, "match", "matches")} found<span>of ${(currentResults?.summary?.records_checked || 0).toLocaleString()} records evaluated</span>`;
+  $("meta").innerHTML = `Target: "${escH(currentResults?.query || "")}" · ${currentResults?.domain || "Retail & Loss Prevention"}`;
 
-    card.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-        <span style="font-size: 0.88rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 6px;">
-          <span>${icon}</span>
-          <span>${cat.label}</span>
-        </span>
-        <span class="status-pill ${badgeClass}" style="font-size: 0.68rem; padding: 2px 7px;">${badgeText}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-bottom: 4px;">
-        <span style="color: var(--text-muted);">Estimated Probability</span>
-        <span style="font-weight: 700; color: ${color}; font-family: var(--font-mono);">${pct}%</span>
-      </div>
-      <div class="prob-meter-bg" style="height: 6px; margin-bottom: 8px;">
-        <div class="prob-meter-fill" style="width: ${pct}%; background: ${color};"></div>
-      </div>
-      <div style="font-size: 0.74rem; color: var(--text-dim); line-height: 1.35;">
-        ${cat.evidence}
+  const listEl = $("list");
+  if (!items.length) {
+    listEl.innerHTML = `
+      <div class="empty">
+        <b style="color: var(--ink); font-weight: 600;">No records in this tab match your filters.</b>
+        <div style="font-size: 13px; margin-top: 4px; color: var(--muted);">Try checking the other tabs or clearing the active filters above.</div>
       </div>
     `;
-    grid.appendChild(card);
-  });
-}
-
-function renderBehaviorProbabilities(ev) {
-  const container = document.getElementById('behaviorProbList');
-  container.innerHTML = '';
-
-  const behaviorKeys = [
-    { key: 'skip_scan', name: 'Skip scan' },
-    { key: 'fake_scan', name: 'Fake scan' },
-    { key: 'pass_around', name: 'Pass-around' },
-    { key: 'quantity_mismatch', name: 'Quantity mismatch' },
-    { key: 'bagging_without_scan', name: 'Bagging without scan' },
-    { key: 'item_left_in_cart', name: 'Item left in cart' },
-    { key: 'bottom_of_basket', name: 'Bottom-of-basket item' },
-    { key: 'sweethearting', name: 'Sweethearting collusion' },
-    { key: 'walkoff', name: 'Walk-off without payment' },
-    { key: 'plu_mismatch', name: 'Produce PLU mismatch' },
-    { key: 'barcode_switch', name: 'Barcode switch / substitution' },
-  ];
-
-  behaviorKeys.forEach(({ key, name }) => {
-    const entry = ev.events[key];
-    const row = document.createElement('div');
-    row.className = 'prob-row';
-
-    if (!entry || entry.probability === null || !entry.evidence_available) {
-      row.innerHTML = `
-        <div class="prob-header">
-          <span class="prob-name" style="color: var(--text-dim);">${name}</span>
-          <span class="prob-unavailable">Unsupported / No evidence</span>
-        </div>
-        <div class="prob-meter-bg">
-          <div class="prob-meter-fill" style="width: 0%;"></div>
-        </div>
-      `;
-    } else {
-      const pct = Math.round(entry.probability * 100);
-      const color =
-        pct >= 80 ? 'var(--danger)' :
-        pct >= 60 ? '#f97316' :
-        pct >= 30 ? 'var(--warning)' : 'var(--success)';
-
-      row.innerHTML = `
-        <div class="prob-header">
-          <span class="prob-name">${name}</span>
-          <span class="prob-percent" style="color: ${color};">${pct}%</span>
-        </div>
-        <div class="prob-meter-bg">
-          <div class="prob-meter-fill" style="width: ${pct}%; background: ${color};"></div>
-        </div>
-      `;
-    }
-
-    container.appendChild(row);
-  });
-}
-
-function renderTrajectory(input) {
-  const container = document.getElementById('trajectoryPathContainer');
-  const countEl = document.getElementById('trajectoryAnomaliesCount');
-  container.innerHTML = '';
-
-  const items = input?.visual_context?.tracked_items || [];
-  if (items.length === 0) {
-    container.innerHTML = '<span style="color: var(--text-dim); font-size: 0.8rem;">No item trajectories available</span>';
-    countEl.textContent = 'None';
     return;
   }
 
-  let totalAnomalies = 0;
+  let html = `
+    <div class="row head">
+      <div>Entity / Lane</div>
+      <div>Risk / Amount</div>
+      <div>Activity & Summary</div>
+      <div>CCTV / Next Action</div>
+      <div>Clef Verdict</div>
+    </div>
+  `;
 
-  items.forEach((item, idx) => {
-    const path = item.path || ['CART', 'HAND', 'SCANNER', 'BAG'];
-    const hasScanner = item.scanner_interaction || path.some((p) => p.includes('SCANNER'));
+  items.forEach((inc) => {
+    const v = verdict(inc);
+    const tagClass = v === "hot" ? "hot" : v === "maybe" ? "maybe" : "no";
+    const tagLabel = v === "hot" ? "Match" : v === "maybe" ? "Unsure" : "Cleared";
+    const riskClass = inc.impact_value > 50 ? "risk-amt hi" : "risk-amt";
+    const inspId = `insp-${inc.id}`;
 
-    if (!hasScanner) totalAnomalies++;
-
-    const itemLabel = document.createElement('div');
-    itemLabel.style.width = '100%';
-    itemLabel.style.fontSize = '0.78rem';
-    itemLabel.style.color = 'var(--text-muted)';
-    itemLabel.style.marginTop = idx > 0 ? '8px' : '0px';
-    itemLabel.textContent = `Item ${idx + 1}: ${item.label || item.id}`;
-    container.appendChild(itemLabel);
-
-    const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = '6px';
-    row.style.flexWrap = 'wrap';
-
-    path.forEach((node, nIdx) => {
-      const span = document.createElement('span');
-      span.className = 'path-node';
-      span.textContent = node;
-
-      if (!hasScanner && (node.includes('BAG') || node.includes('CUSTOMER') || node.includes('EXIT') || node.includes('SIDE'))) {
-        span.classList.add('suspicious');
-      } else if (node.includes('SCANNER')) {
-        span.classList.add('valid');
-      }
-
-      row.appendChild(span);
-
-      if (nIdx < path.length - 1) {
-        const arrow = document.createElement('span');
-        arrow.className = 'path-arrow';
-        arrow.textContent = '→';
-        row.appendChild(arrow);
-      }
-    });
-
-    container.appendChild(row);
-  });
-
-  countEl.textContent = totalAnomalies > 0 ? `${totalAnomalies} bypass anomalies detected` : 'Clean trajectory';
-  countEl.style.color = totalAnomalies > 0 ? 'var(--danger)' : 'var(--success)';
-}
-
-function renderTimeline(timeline) {
-  const container = document.getElementById('timelineList');
-  container.innerHTML = '';
-
-  if (!timeline || timeline.length === 0) {
-    container.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem;">No timeline events</div>';
-    return;
-  }
-
-  timeline.forEach((item) => {
-    const el = document.createElement('div');
-    el.className = 'timeline-item';
-    el.style.cursor = 'pointer';
-
-    let dotClass = 'dot-normal';
-    if (item.source === 'pos') {
-      dotClass = item.severity === 'alert' ? 'dot-alert' : 'dot-pos';
-    } else if (item.severity === 'alert') {
-      dotClass = 'dot-alert';
-    } else if (item.severity === 'suspicious') {
-      dotClass = 'dot-suspicious';
-    }
-
-    el.innerHTML = `
-      <div class="timeline-dot ${dotClass}"></div>
-      <div class="timeline-time">${item.timestamp}</div>
-      <div class="timeline-content">
-        <span class="timeline-source source-${item.source}">${item.source}</span>
-        ${item.description}
+    html += `
+      <div class="row">
+        <div class="who">
+          <b>${escH(inc.entity || "Unknown")}</b>
+          <span>${escH(inc.context || "Register")} · ${escH(inc.timestamp || "")}</span>
+        </div>
+        <div class="${riskClass}">
+          ${inc.impact_formatted || usd(inc.impact_value)}
+          <small>${escH(inc.severity)} priority</small>
+        </div>
+        <div class="evidence">
+          ${escH(inc.summary || "")}
+          <small>${escH(inc.evidence_details || inc.clef_pattern || "")}</small>
+        </div>
+        <div class="action-cell">
+          <b>CCTV Review</b>
+          ${escH(inc.what_to_do || "Verify transaction records with register camera")}
+        </div>
+        <div class="clefcell">
+          <span class="tag ${tagClass}">${tagLabel}</span>
+          <div class="chk y tip-left" data-tip="Clef confidence score">${inc.clef_match_pct || "92% Match"}</div>
+          <div class="chk y">${inc.clef_confidence || "High Certainty"}</div>
+          <button type="button" class="insp-btn" onclick="toggleInspector('${inspId}')">Inspect Clef Decision</button>
+          <div class="insp-box" id="${inspId}"><b>Model:</b> ${inc.clef_decision?.model || "clef-flash"}
+<b>Match Prob:</b> ${inc.clef_decision?.match_probability ?? 0.92}
+<b>Severity Dist:</b> ${JSON.stringify(inc.clef_decision?.severity_distribution || {})}
+<b>Evidence IDs:</b> ${(inc.evidence_records || []).join(", ") || inc.id}</div>
+        </div>
       </div>
     `;
-
-    // Clicking timeline item seeks the real video player
-    el.addEventListener('click', () => {
-      const video = document.getElementById('realVideoPlayer');
-      if (video && video.src) {
-        const parts = item.timestamp.split(':');
-        if (parts.length === 3) {
-          const sec = parseFloat(parts[2]) % (video.duration || 10);
-          video.currentTime = sec;
-          video.play().catch(() => {});
-        }
-      }
-    });
-
-    container.appendChild(el);
   });
+
+  listEl.innerHTML = html;
 }
 
-function suggestLabelForDecision(decision) {
-  const select = document.getElementById('reviewLabelSelect');
-  if (!currentEvent) return;
+window.toggleInspector = function (id) {
+  const box = $(id);
+  if (box) box.classList.toggle("open");
+};
 
-  if (decision === 'no_loss') {
-    select.value = 'not_loss';
-    return;
-  }
-  if (decision === 'operational_error') {
-    select.value = 'operational_error';
-    return;
-  }
-  if (decision === 'unclear') {
-    select.value = 'insufficient_evidence';
-    return;
+// -----------------------------------------------------------------------------
+// REPORT COPY & EXPORTS
+// -----------------------------------------------------------------------------
+function setupActions() {
+  const copyBtn = $("copyReportBtn");
+  if (copyBtn) {
+    copyBtn.onclick = () => {
+      const items = getFilteredList();
+      if (!items.length) {
+        toast("No matches to copy");
+        return;
+      }
+      const sum = currentResults?.summary || {};
+      let text = `CLEF LOSS PREVENTION & ANOMALY REPORT\n`;
+      text += `Target Query: "${currentResults?.query || ""}"\n`;
+      text += `Records Evaluated: ${sum.records_checked} | Total Risk: ${sum.total_impact_formatted || usd(sum.total_impact)}\n`;
+      text += `Flagged Incidents: ${items.length}\n\n`;
+      items.forEach((inc, idx) => {
+        text += `${idx + 1}. [${inc.severity}] ${inc.title}\n`;
+        text += `   Entity: ${inc.entity} (${inc.context}) | Exposure: ${inc.impact_formatted || usd(inc.impact_value)}\n`;
+        text += `   Clef Verdict: ${inc.clef_match_pct} | ${inc.summary}\n`;
+        text += `   Action: ${inc.what_to_do}\n\n`;
+      });
+      navigator.clipboard.writeText(text).then(() => {
+        toast("Copied Loss Prevention Report to clipboard");
+      });
+    };
   }
 
-  suggestLabelFromEvent(currentEvent);
+  const csvBtn = $("csvBtn");
+  if (csvBtn) {
+    csvBtn.onclick = async () => {
+      const items = getFilteredList();
+      if (!items.length) {
+        toast("No matches to download");
+        return;
+      }
+      try {
+        const res = await fetch(`${BASE}/api/export/csv`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            incidents: items,
+            query: currentResults?.query || "",
+          }),
+        });
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `clef_findings_${Date.now()}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast("Downloaded CSV spreadsheet");
+      } catch (err) {
+        toast("CSV download failed: " + err.message);
+      }
+    };
+  }
+
+  const jsonBtn = $("jsonBtn");
+  if (jsonBtn) {
+    jsonBtn.onclick = () => {
+      if (!currentResults) return;
+      const str = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentResults, null, 2));
+      const a = document.createElement("a");
+      a.href = str;
+      a.download = `clef_results_${Date.now()}.json`;
+      a.click();
+      toast("Exported JSON findings");
+    };
+  }
 }
 
-function suggestLabelFromEvent(ev) {
-  const select = document.getElementById('reviewLabelSelect');
-  const detected = ev.detected_theft_types || [];
+// -----------------------------------------------------------------------------
+// CUSTOM DATA DRAWER
+// -----------------------------------------------------------------------------
+function setupDrawer() {
+  const drawer = $("drawer");
+  const bg = $("drawerBg");
+  const openBtn = $("openDrawerBtn");
+  const pillBtn = $("datasetPill");
+  const closeBtn = $("drawerX");
+  const cancelBtn = $("cancelDrawerBtn");
 
-  if (detected.length === 0 && ev.overall_shrink_probability < 0.35) {
-    select.value = 'not_loss';
-    return;
+  const openDrawer = () => {
+    drawer.classList.add("open");
+    bg.classList.remove("hidden");
+  };
+
+  const closeDrawer = () => {
+    drawer.classList.remove("open");
+    bg.classList.add("hidden");
+  };
+
+  if (openBtn) openBtn.onclick = openDrawer;
+  if (pillBtn) pillBtn.onclick = openDrawer;
+  if (closeBtn) closeBtn.onclick = closeDrawer;
+  if (cancelBtn) cancelBtn.onclick = closeDrawer;
+  if (bg) bg.onclick = closeDrawer;
+
+  // Preset chips inside drawer
+  document.querySelectorAll(".pchip").forEach((chip) => {
+    chip.onclick = () => {
+      const presetKey = chip.dataset.preset;
+      activeDataset = presetKey;
+      customDataContent = null;
+      customFile = null;
+      const bTitle = chip.querySelector("b")?.textContent || presetKey;
+      updateDatasetPill(bTitle);
+      updatePlanText();
+      closeDrawer();
+      toast(`Loaded preset dataset: ${bTitle}`);
+    };
+  });
+
+  // File Upload
+  const dropArea = $("dropArea");
+  const fileInput = $("fileInput");
+  if (dropArea && fileInput) {
+    dropArea.onclick = () => fileInput.click();
+    dropArea.ondragover = (e) => { e.preventDefault(); dropArea.classList.add("dragover"); };
+    dropArea.ondragleave = () => dropArea.classList.remove("dragover");
+    dropArea.ondrop = (e) => {
+      e.preventDefault();
+      dropArea.classList.remove("dragover");
+      if (e.dataTransfer.files.length) handleLoadedFile(e.dataTransfer.files[0]);
+    };
+    fileInput.onchange = (e) => {
+      if (e.target.files.length) handleLoadedFile(e.target.files[0]);
+    };
   }
 
-  if (detected.includes('Non-Scan')) {
-    select.value = 'non_scan';
-    return;
+  // Paste area
+  const pasteArea = $("pasteArea");
+  const counter = $("pasteCounter");
+  const clearBtn = $("clearPasteBtn");
+  if (pasteArea && counter) {
+    pasteArea.oninput = () => {
+      const lines = pasteArea.value ? pasteArea.value.split(/\r?\n/).length : 0;
+      counter.textContent = `${lines} lines · ${pasteArea.value.length} characters`;
+    };
   }
-  if (detected.includes('Left in Cart')) {
-    select.value = 'left_in_cart';
-    return;
-  }
-  if (detected.includes('Inventory Loss')) {
-    select.value = 'inventory_loss';
-    return;
-  }
-  if (detected.includes('Price Look-Up Abuse')) {
-    select.value = 'price_lookup_abuse';
-    return;
-  }
-  if (detected.includes('No Sale')) {
-    select.value = 'no_sale';
-    return;
-  }
-  if (detected.includes('Suspicious Refund')) {
-    select.value = 'suspicious_refund';
-    return;
-  }
-  if (detected.includes('Canceled Transaction')) {
-    select.value = 'canceled_transaction';
-    return;
-  }
-  if (detected.includes('Late Night Food Prep')) {
-    select.value = 'late_night_food_prep';
-    return;
+  if (clearBtn && pasteArea) {
+    clearBtn.onclick = () => {
+      pasteArea.value = "";
+      if (counter) counter.textContent = "0 lines · 0 characters";
+    };
   }
 
-  const prim = (ev.observable_behavior?.primary_behavior || '').toLowerCase();
-  if (prim.includes('skip scan') || prim.includes('pass-around') || prim.includes('fake scan')) select.value = 'non_scan';
-  else if (prim.includes('bottom-of-basket') || prim.includes('cart')) select.value = 'left_in_cart';
-  else if (prim.includes('plu')) select.value = 'price_lookup_abuse';
-  else select.value = 'inventory_loss';
+  // Apply custom dataset
+  const applyBtn = $("applyDataBtn");
+  if (applyBtn) {
+    applyBtn.onclick = () => {
+      const text = (pasteArea?.value || "").trim();
+      if (text) {
+        customDataContent = text;
+        customFile = null;
+        updateDatasetPill(`Custom text (${text.split(/\r?\n/).length} rows)`);
+        updatePlanText();
+        closeDrawer();
+        toast("Applied custom pasted records");
+      } else if (customFile) {
+        closeDrawer();
+        toast(`Applied uploaded file: ${customFile.name}`);
+      } else {
+        closeDrawer();
+      }
+    };
+  }
 }
 
-function openClipModal() {
-  const dialog = document.getElementById('clipDialog');
-  dialog.showModal();
-  startClipAnimation();
+function handleLoadedFile(file) {
+  customFile = file;
+  customDataContent = null;
+  const label = $("fileChosenLabel");
+  const sizeKb = (file.size / 1024).toFixed(1);
+  if (label) label.textContent = `✓ ${file.name} (${sizeKb} KB ready)`;
+  updateDatasetPill(`${file.name} (${sizeKb} KB)`);
+  updatePlanText();
+  toast(`File ready: ${file.name}`);
 }
 
-function closeClipModal() {
-  if (animationTimer) cancelAnimationFrame(animationTimer);
-  document.getElementById('clipDialog').close();
+// -----------------------------------------------------------------------------
+// RECENT SEARCHES
+// -----------------------------------------------------------------------------
+function loadRecentSearches() {
+  try {
+    const raw = localStorage.getItem("clef_recent_searches");
+    recentSearches = raw ? JSON.parse(raw) : [];
+  } catch {
+    recentSearches = [];
+  }
+  renderRecentSearches();
 }
 
-function startClipAnimation() {
-  const canvas = document.getElementById('clipCanvas');
-  const ctx = canvas.getContext('2d');
-  let frame = 0;
+function saveRecentSearch(query) {
+  if (!query) return;
+  recentSearches = [query, ...recentSearches.filter((q) => q !== query)].slice(0, 6);
+  try {
+    localStorage.setItem("clef_recent_searches", JSON.stringify(recentSearches));
+  } catch {}
+  renderRecentSearches();
+}
 
-  if (animationTimer) cancelAnimationFrame(animationTimer);
+function renderRecentSearches() {
+  const recentBox = $("recent");
+  const listEl = $("recentList");
+  if (!recentBox || !listEl) return;
 
-  function draw() {
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (!recentSearches.length) {
+    recentBox.classList.add("hidden");
+    return;
+  }
 
-    // Grid lines for checkout camera view
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < canvas.width; x += 40) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, canvas.height);
-      ctx.stroke();
+  recentBox.classList.remove("hidden");
+  listEl.innerHTML = recentSearches.map((q, idx) => `
+    <div class="rrow">
+      <button type="button" class="ropen" data-idx="${idx}">
+        <b>${escH(q)}</b>
+        <span>Run again →</span>
+      </button>
+      <button type="button" class="rdel" data-del="${idx}" aria-label="Delete">×</button>
+    </div>
+  `).join("");
+
+  listEl.onclick = (e) => {
+    const del = e.target.closest("button[data-del]");
+    if (del) {
+      const idx = parseInt(del.dataset.del, 10);
+      recentSearches.splice(idx, 1);
+      localStorage.setItem("clef_recent_searches", JSON.stringify(recentSearches));
+      renderRecentSearches();
+      return;
     }
-    for (let y = 0; y < canvas.height; y += 40) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(canvas.width, y);
-      ctx.stroke();
+    const open = e.target.closest("button[data-idx]");
+    if (open) {
+      const idx = parseInt(open.dataset.idx, 10);
+      $("line").value = recentSearches[idx];
+      executeScan();
     }
-
-    // Checkout Lane Elements
-    // Cart Zone (Left)
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(40, 100, 120, 180);
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.1)';
-    ctx.fillRect(40, 100, 120, 180);
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = '12px ui-monospace';
-    ctx.fillText('CART ZONE', 60, 125);
-
-    // Scanner Optical Window (Middle)
-    const scannerX = 280;
-    const scannerY = 140;
-    ctx.strokeStyle = '#ef4444';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(scannerX, scannerY, 80, 100);
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
-    ctx.fillRect(scannerX, scannerY, 80, 100);
-    ctx.fillStyle = '#ef4444';
-    ctx.fillText('OPTICAL SCANNER', scannerX - 10, scannerY - 10);
-
-    // Bagging Well (Right)
-    ctx.strokeStyle = '#10b981';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(480, 100, 120, 180);
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.1)';
-    ctx.fillRect(480, 100, 120, 180);
-    ctx.fillStyle = '#10b981';
-    ctx.fillText('BAGGING WELL', 495, 125);
-
-    // Calculate item movement across frames
-    frame = (frame + 1) % 240;
-    const t = frame / 240;
-
-    let itemX = 100;
-    let itemY = 190;
-
-    const isSkipScan = currentEvent?.events?.skip_scan?.probability && currentEvent.events.skip_scan.probability > 0.5;
-    const isPassAround = currentEvent?.events?.pass_around?.probability && currentEvent.events.pass_around.probability > 0.5;
-
-    if (isSkipScan || isPassAround) {
-      // Bypasses around scanner (Arcing upwards away from scanner window)
-      itemX = 100 + t * 440;
-      itemY = 190 - Math.sin(t * Math.PI) * 90; // Routes above/around scanner
-    } else {
-      // Normal path: directly across optical scanner
-      itemX = 100 + t * 440;
-      itemY = 190;
-    }
-
-    // Draw item bounding box
-    ctx.strokeStyle = isSkipScan ? '#ef4444' : '#10b981';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(itemX - 25, itemY - 25, 50, 50);
-    ctx.fillStyle = isSkipScan ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)';
-    ctx.fillRect(itemX - 25, itemY - 25, 50, 50);
-
-    // Item Label tag
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '10px ui-monospace';
-    ctx.fillText('item_1 [TRACKED]', itemX - 40, itemY - 32);
-
-    // Trajectory Path Trail
-    ctx.strokeStyle = isSkipScan ? 'rgba(239, 68, 68, 0.6)' : 'rgba(16, 185, 129, 0.6)';
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(100, 190);
-    ctx.lineTo(itemX, itemY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    animationTimer = requestAnimationFrame(draw);
-  }
-
-  draw();
-}
-
-function openJsonModal() {
-  const dialog = document.getElementById('jsonDialog');
-  const pre = document.getElementById('rawJsonViewer');
-  pre.textContent = JSON.stringify(
-    {
-      input: currentInput,
-      clef_output: currentEvent,
-    },
-    null,
-    2
-  );
-  dialog.showModal();
+  };
 }

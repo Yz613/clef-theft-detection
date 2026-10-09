@@ -1,363 +1,542 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clef Grocery Checkout Shrink Detection</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clef: the world's simplest retail theft & exception scanner</title>
+  <meta name="description" content="Type what you want Clef to look for. Check cashiers, scan-and-voids, and till anomalies in seconds, every incident evaluated by Cloudflare Clef.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%229%22%20fill%3D%22%23FF6640%22/%3E%3Cpath%20d%3D%22M18%206L9%2017h6l-2%209%209-11h-6z%22%20fill%3D%22%23fff%22/%3E%3C/svg%3E">
+  <script>document.documentElement.dataset.theme = localStorage.getItem("clef_theme") || "light"</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #FAF8F4;
+      --card: #FFFFFF;
+      --ink: #16140F;
+      --muted: #6B665C;
+      --faint: #A39D91;
+      --line: #E8E3D8;
+      --hover: #F4F1EA;
+      --accent: #FF6640;
+      --accent-soft: #FFE9E2;
+      --good: #1F9D55;
+      --good-soft: #E3F5EA;
+      --maybe: #B7791F;
+      --maybe-soft: #FBF0DC;
+      --no: #A0998C;
+      --no-soft: #F1EEE8;
+    }
+    :root[data-theme="dark"] {
+      --bg: #111110;
+      --card: #1B1A18;
+      --ink: #F2EFE8;
+      --muted: #9C968A;
+      --faint: #6E685E;
+      --line: #2C2A26;
+      --hover: #23211E;
+      --accent-soft: #3A2119;
+      --good-soft: #15301F;
+      --maybe-soft: #352914;
+      --no-soft: #24221F;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #111110;
+        --card: #1B1A18;
+        --ink: #F2EFE8;
+        --muted: #9C968A;
+        --faint: #6E685E;
+        --line: #2C2A26;
+        --hover: #23211E;
+        --accent-soft: #3A2119;
+        --good-soft: #15301F;
+        --maybe-soft: #352914;
+        --no-soft: #24221F;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 Inter, system-ui, sans-serif; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 18px 16px 80px; }
+    
+    /* HEADER */
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
+    .brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; color: var(--ink); text-decoration: none; cursor: pointer; }
+    .brand .mark { width: 28px; height: 28px; flex: none; transition: transform .25s ease; }
+    .brand:hover .mark { transform: rotate(-8deg) scale(1.08); }
+    .brand .word { font-size: 19px; font-weight: 750; letter-spacing: -.035em; }
+    .brand .by { font-weight: 500; font-size: 11.5px; color: var(--faint); letter-spacing: 0; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
+    .brand .by b { font-weight: 650; color: var(--accent); }
+    .hright { display: flex; gap: 8px; align-items: center; flex: none; }
+    .pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; font: 500 12.5px "JetBrains Mono", monospace; color: var(--muted); background: transparent; }
+    .pill.clickable { cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+    .pill.clickable:hover { color: var(--ink); border-color: var(--faint); background: var(--hover); }
+    .themebtn { cursor: pointer; font: 500 12.5px Inter, system-ui, sans-serif; }
+    .mono { font: 500 12.5px "JetBrains Mono", monospace; white-space: nowrap; }
+    .muted { color: var(--muted); }
+    .hidden { display: none !important; }
+    a { color: var(--ink); text-decoration-color: var(--line); text-underline-offset: 3px; }
+    .link { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--muted); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; cursor: pointer; }
+    .link:hover { color: var(--ink); text-decoration-color: var(--ink); }
+    
+    .btn { background: var(--ink); color: var(--card); border: 0; border-radius: 10px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-block; transition: transform .12s, box-shadow .12s, background .12s, opacity .12s; }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px -6px rgba(0,0,0,.35); }
+    .btn:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
+    .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+    .btn.ghost:hover { background: var(--hover); border-color: var(--faint); }
+    .btn.sm { padding: 6px 12px; font-size: 13.5px; border-radius: 8px; }
+    .btn.stop { background: var(--accent); color: #fff; }
+
+    /* HERO */
+    .hero { max-width: 720px; margin: 11vh auto 0; transition: margin .25s ease; }
+    body.ran .hero { margin: 14px 0 0; max-width: 100%; }
+    h1 { font-size: 31px; line-height: 1.15; letter-spacing: -.02em; margin: 0 0 16px; font-weight: 650; }
+    body.ran h1 { display: none; }
+    .back { display: none; margin: 0 0 10px 2px; }
+    body.ran .back { display: inline-block; }
+    .lede { margin: -6px 0 18px; font-size: 15.5px; line-height: 1.5; color: var(--muted); max-width: 600px; }
+    body.ran .lede { display: none; }
+
+    /* MODE SELECTOR (LANES) */
+    .lane { display: inline-flex; gap: 2px; margin: 0 4px 10px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+    .lane button { border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 500; color: var(--muted); padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: color .15s, background .15s; }
+    .lane button:hover { color: var(--ink); }
+    .lane button.on { background: var(--ink); color: #fff; }
+    body.ran .lane { margin-bottom: 8px; }
+
+    /* SEARCH FORM */
+    .search { display: flex; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 6px; box-shadow: 0 8px 24px -14px rgba(0,0,0,.18); }
+    .search:focus-within { border-color: var(--ink); }
+    .search input { flex: 1; border: 0; background: transparent; font: inherit; font-size: 18px; padding: 10px 12px; color: var(--ink); min-width: 0; }
+    .search input:focus { outline: none; }
+    .search input::placeholder { color: var(--faint); }
+    
+    .proof { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 12px 4px 0; font-size: 13px; color: var(--muted); }
+    .proof span::before { content: "✓"; color: var(--good); font-weight: 700; margin-right: 5px; }
+    body.ran .proof { display: none; }
+    
+    .plan { min-height: 22px; margin: 10px 4px 0; font-size: 13.5px; color: var(--muted); }
+    .plan b { color: var(--ink); font-weight: 600; }
+
+    /* SAMPLE PREVIEW BOX */
+    .sample { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; margin: 22px 0 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.03); transition: border-color .15s, box-shadow .15s; }
+    .sample:hover { border-color: var(--faint); box-shadow: 0 6px 22px rgba(0,0,0,.06); }
+    .shead { display: flex; justify-content: space-between; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--muted); background: var(--bg); }
+    .shead b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+    .srow { display: grid; grid-template-columns: 1.3fr 1.8fr 1fr auto; gap: 12px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
+    .srow:first-of-type { border-top: 0; }
+    .srow b { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .srow .sem { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+    .srow .sok { font-size: 12px; color: var(--good); white-space: nowrap; }
+    .sfootline { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--accent); }
+    body.ran .sample { display: none; }
+
+    /* TRY SUGGESTIONS */
+    .try { margin: 28px 4px 0; }
+    .tryh { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+    .ex { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+    .ex .tryh { margin: 0; }
+    .exb { text-decoration: none; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; transition: border-color .12s, background .12s; }
+    .exb:hover { border-color: var(--accent); background: var(--hover); }
+    body.ran .try { display: none; }
+
+    /* RECENT SEARCHES */
+    .recent { margin: 28px 4px 0; }
+    .rrow { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+    .ropen { flex: 1; display: flex; justify-content: space-between; gap: 12px; background: none; border: 0; padding: 9px 2px; font: inherit; color: var(--ink); cursor: pointer; text-align: left; min-width: 0; }
+    .ropen:hover b { text-decoration: underline; text-underline-offset: 3px; }
+    .ropen b { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ropen span { font: 500 12px "JetBrains Mono", monospace; color: var(--faint); white-space: nowrap; }
+    .rdel { background: none; border: 0; color: var(--faint); cursor: pointer; font-size: 16px; padding: 4px 6px; opacity: 0; }
+    .rrow:hover .rdel, .rdel:focus { opacity: 1; }
+    .rdel:hover { color: var(--ink); }
+    body.ran .recent { display: none; }
+
+    .sfoot { margin: 34px 4px 24px; font-size: 12.5px; color: var(--faint); }
+    body.ran .sfoot { display: none; }
+
+    /* RESULTS VIEW */
+    .results { display: grid; grid-template-columns: 240px 1fr; gap: 24px; margin-top: 22px; align-items: start; }
+    
+    /* LIVE STATS HEADER */
+    .live { grid-column: 1/-1; margin: 0 0 18px; padding: 20px 22px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+    .lvKick { font: 600 10.5px/1 "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+    .lvHead h2 { margin: 8px 0 16px; font-size: 26px; line-height: 1.15; letter-spacing: -.02em; font-weight: 650; }
+    .lvStats { display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; gap: 10px; }
+    .lvStat { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px 14px; min-width: 0; overflow: hidden; }
+    .lvStat label { display: block; font: 600 9.5px/1 "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 9px; }
+    .lvStat b { display: block; font: 600 28px/1 Inter, system-ui, sans-serif; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .lvStat small { display: block; margin-top: 6px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lvStat i { position: absolute; left: 14px; right: 14px; bottom: 8px; height: 3px; border-radius: 2px; background: var(--line); }
+    .lvStat em { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--accent); transition: width .3s ease-out; }
+    .lvStat.dark { background: #16140F; border-color: #16140F; color: #fff; }
+    .lvStat.dark label { color: #8D877B; }
+    .lvStat.dark small { color: #B5AE9F; }
+    .lvStat.dark i { background: #3A362E; }
+    .lvStat.risk { background: var(--accent-soft); border-color: #FFD3C4; }
+    .lvStat.risk b { color: #16140F; }
+
+    /* SIDEBAR FILTERS */
+    .side { position: sticky; top: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; max-height: calc(100vh - 24px); overflow: auto; }
+    .sidehead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+    .sidehead b { font-size: 14px; }
+    .fnote { font-size: 12px; color: var(--faint); margin-bottom: 6px; }
+    .group { padding: 10px 0; border-top: 1px solid var(--line); }
+    .group:first-child { border-top: 0; }
+    .gtitle { font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+    .opt { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; border-radius: 7px; padding: 4px 8px; font: inherit; font-size: 13.5px; color: var(--ink); cursor: pointer; text-align: left; transition: background .12s; }
+    .opt:hover { background: var(--hover); }
+    .opt.on { background: var(--ink); color: var(--card); }
+    .opt .n { font: 500 11.5px "JetBrains Mono", monospace; color: var(--faint); }
+    .opt.on .n { color: var(--card); opacity: .7; }
+    .opt.zero { opacity: .4; }
+    .opt .lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
+    .filtersBtn, .sideDone { display: none; }
+
+    /* MAIN RESULTS CONTENT */
+    .main { min-width: 0; }
+    .bar1 { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+    .count { font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
+    .count span { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+    .meta { font-size: 12.5px; color: var(--muted); margin: 3px 0 10px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    
+    .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+    .tab { border: 0; background: transparent; color: var(--muted); border-radius: 8px; padding: 5px 10px; cursor: pointer; font: inherit; font-size: 13.5px; transition: color .12s, background .12s; }
+    .tab:hover { color: var(--ink); }
+    .tab.on { background: var(--card); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); font-weight: 600; }
+    .tab span { font: 500 12px "JetBrains Mono", monospace; color: var(--faint); margin-left: 4px; }
+    
+    .prog { height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
+    .prog i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s ease; }
+    
+    .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+    .row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 2.2fr) minmax(0, 1.6fr) minmax(0, 1.2fr); gap: 14px; padding: 12px 14px; border-top: 1px solid var(--line); font-size: 13.5px; align-items: start; transition: background .12s; }
+    .row:first-child { border-top: 0; border-radius: 12px 12px 0 0; }
+    .row:last-child { border-radius: 0 0 12px 12px; }
+    .row.head { font-size: 12px; color: var(--faint); padding: 9px 14px; background: var(--bg); font-weight: 500; }
+    .row:not(.head):hover { background: var(--hover); }
+    
+    .who b { display: block; font-weight: 600; font-size: 14px; }
+    .who span { color: var(--muted); font-size: 12.5px; }
+    .risk-amt { font: 600 14px "JetBrains Mono", monospace; color: var(--ink); }
+    .risk-amt.hi { color: var(--accent); }
+    .risk-amt small { display: block; font-family: Inter, sans-serif; font-size: 11.5px; font-weight: 400; color: var(--faint); margin-top: 1px; }
+    .evidence { color: var(--ink); font-size: 13px; line-height: 1.4; }
+    .evidence small { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .action-cell { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+    .action-cell b { display: block; color: var(--ink); font-weight: 600; font-size: 12px; margin-bottom: 2px; }
+    
+    .tag { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 6px; padding: 2px 7px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tag.hot { background: var(--good-soft); color: var(--good); }
+    .tag.maybe { background: var(--maybe-soft); color: var(--maybe); }
+    .tag.no { background: var(--no-soft); color: var(--no); }
+    .tag.wait { background: var(--bg); color: var(--faint); }
+    .chk { font-size: 12px; color: var(--muted); }
+    .chk.y::before { content: "✓ "; color: var(--good); font-weight: 700; }
+    .chk.n::before { content: "✗ "; color: var(--no); }
+    .lbl { display: none; }
+    .empty { padding: 42px 20px; text-align: center; color: var(--muted); }
+    
+    /* SYSTEM ONE CLEF INSPECTOR */
+    .insp-btn { background: none; border: 0; padding: 0; font: 500 11.5px Inter, sans-serif; color: var(--muted); text-decoration: underline; text-decoration-color: var(--line); cursor: pointer; margin-top: 4px; display: inline-block; }
+    .insp-btn:hover { color: var(--accent); text-decoration-color: var(--accent); }
+    .insp-box { display: none; margin-top: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; font: 500 11.5px "JetBrains Mono", monospace; color: var(--muted); max-height: 200px; overflow: auto; white-space: pre-wrap; }
+    .insp-box.open { display: block; }
+
+    /* TOOLTIP */
+    [data-tip] { position: relative; }
+    @media (hover:none) { [data-tip]:hover::after, [data-tip]:focus-visible::after { display: none !important; } }
+    [data-tip]:hover::after, [data-tip]:focus-visible::after {
+      content: attr(data-tip); position: absolute; z-index: 20; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+      width: max-content; max-width: 260px; white-space: normal; text-align: left; background: var(--ink); color: var(--card); font: 500 12.5px/1.45 Inter, system-ui, sans-serif;
+      letter-spacing: 0; padding: 8px 10px; border-radius: 8px; box-shadow: 0 8px 24px -8px rgba(0,0,0,.35); pointer-events: none; animation: tip .12s .2s both;
+    }
+    [data-tip].tip-down:hover::after { bottom: auto; top: calc(100% + 8px); }
+    [data-tip].tip-left:hover::after { left: auto; right: 0; transform: none; }
+    [data-tip].tip-right:hover::after { left: 0; transform: none; }
+    @keyframes tip { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+    /* DRAWER (CUSTOM DATA & UPLOAD) */
+    .drawerBg { position: fixed; inset: 0; background: rgba(10,8,5,.38); z-index: 39; animation: fade .2s; }
+    .drawer { position: fixed; top: 0; right: 0; height: 100%; width: min(480px, 100%); background: var(--card); border-left: 1px solid var(--line); z-index: 40; overflow: auto; padding: 24px; transform: translateX(102%); transition: transform .28s cubic-bezier(.2,.8,.2,1); box-shadow: -20px 0 50px -30px rgba(0,0,0,.4); }
+    .drawer.open { transform: none; }
+    .dhead { display: flex; justify-content: space-between; align-items: center; font-size: 17px; }
+    .dsub { color: var(--muted); font-size: 13.5px; margin: 6px 0 16px; }
+    .dsection { margin-bottom: 20px; }
+    .dtitle { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+    .preset-chips { display: flex; flex-direction: column; gap: 6px; }
+    .pchip { display: flex; justify-content: space-between; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; text-align: left; transition: border-color .15s, background .15s; }
+    .pchip:hover { border-color: var(--accent); background: var(--hover); }
+    .pchip b { font-weight: 600; }
+    .pchip span { font-size: 11.5px; color: var(--muted); }
+    
+    .droparea { border: 1.5px dashed var(--line); border-radius: 10px; padding: 18px 14px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; background: var(--bg); }
+    .droparea:hover, .droparea.dragover { border-color: var(--ink); background: var(--hover); }
+    .droparea b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+    .droparea span { font-size: 12px; color: var(--muted); }
+    
+    .pastebox { width: 100%; height: 150px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 10px; font: 500 12px "JetBrains Mono", monospace; color: var(--ink); resize: vertical; outline: none; }
+    .pastebox:focus { border-color: var(--ink); }
+    .dfootline { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--faint); margin-top: 4px; }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+    /* TOAST */
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--card); padding: 9px 16px; border-radius: 10px; font-size: 14px; font-weight: 500; opacity: 0; transition: opacity .2s ease; pointer-events: none; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+    .toast.show { opacity: 1; }
+
+    /* RESPONSIVE */
+    @media (max-width: 860px) {
+      .hero { margin-top: 6vh; }
+      h1 { font-size: 25px; }
+      .search input { font-size: 16px; }
+      .results { grid-template-columns: 1fr; gap: 12px; }
+      .side { position: static; max-height: none; display: none; overflow: visible; }
+      .side.open { display: block; }
+      .sideDone { display: block; width: 100%; position: sticky; bottom: 12px; margin-top: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.18); }
+      .filtersBtn { display: inline-block; }
+      .row.head { display: none; }
+      .row { grid-template-columns: 1fr auto; gap: 8px 12px; padding: 14px 16px; }
+      .row .evidence, .row .action-cell, .row .clefcell { grid-column: 1/-1; }
+      .lbl { display: inline; color: var(--faint); font-size: 12px; margin-right: 4px; }
+      .lvStats { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 480px) {
+      .brand .by { display: none; }
+      .hright { gap: 6px; }
+      .actions { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+    }
+  </style>
 </head>
 <body>
+<div class="wrap">
   <header>
-    <div class="brand">
-      <div class="brand-logo">C</div>
-      <div class="brand-text">
-        <h1>Clef Shrink Detection <span class="model-badge">@cf/cloudflare/clef</span></h1>
-        <p>Probabilistic Grocery Checkout Loss Decision Service</p>
-      </div>
-    </div>
-    <div class="header-controls">
-      <div id="clefStatusBadge" class="status-pill score-medium" style="cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.75rem;" title="Click to view/configure Cloudflare Workers AI credentials">
-        <span class="status-dot" id="clefStatusDot" style="width: 8px; height: 8px; border-radius: 50%; background: #eab308; display: inline-block;"></span>
-        <span id="clefStatusText">Local Vision Engine</span>
-      </div>
-      <button id="configClefBtn" class="btn btn-outline" style="font-size: 0.8rem;">⚙️ Cloudflare Config</button>
-      <select id="scenarioSelect" class="select-scenario" aria-label="Select benchmark scenario">
-        <option value="">-- Load Benchmark Scenario --</option>
-      </select>
-      <button id="runScenarioBtn" class="btn btn-primary">Run Scenario</button>
-      <button id="viewRawJsonBtn" class="btn btn-outline">Inspect Clef Payload</button>
+    <a class="brand" id="brandHome" href="#home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="9" fill="#FF6640"/>
+        <path d="M18 6L9 17h6l-2 9 9-11h-6z" fill="#fff"/>
+      </svg>
+      <span class="word">Clef</span>
+      <span class="by">powered by <b>Workers AI</b></span>
+    </a>
+    <div class="hright">
+      <button class="pill clickable tip-down tip-left" id="datasetPill" type="button" data-tip="Active dataset loaded. Click to switch or upload custom records.">248 records · Sweethearting</button>
+      <button class="pill clickable tip-down tip-left" id="modelPill" type="button" data-tip="Click to toggle between Clef Flash (9B) and Clef (27B)">Clef Flash 9B</button>
+      <button class="btn sm ghost" id="openDrawerBtn" type="button">Custom Data</button>
+      <button class="pill clickable themebtn tip-down tip-left" id="themeBtn" type="button" data-tip="Toggle Light and Dark Mode">Theme</button>
     </div>
   </header>
 
-  <main class="app-container">
-    <!-- Left Sidebar: Event Queue -->
-    <aside class="queue-sidebar">
-      <div class="sidebar-title">
-        <span>Review Queue</span>
-        <div style="display: flex; gap: 6px; align-items: center;">
-          <span id="queueCount" class="badge-count">0 items</span>
-          <button id="clearQueueBtn" class="btn btn-outline" style="padding: 2px 7px; font-size: 0.72rem; color: #f87171; border-color: rgba(248, 113, 113, 0.35);" title="Clear all videos from queue">Clear</button>
+  <!-- HERO STATE -->
+  <div class="hero">
+    <button class="link back" id="back" type="button">← All investigations</button>
+    <h1>The world's simplest retail theft & exception scanner.</h1>
+    <p class="lede">Type what you want Clef to look for. Check cashiers, voids, and till anomalies in seconds, every incident evaluated by Cloudflare Clef.</p>
+    
+    <div class="lane" id="lane" role="tablist" aria-label="Investigation Preset Mode">
+      <button type="button" role="tab" class="on" data-lane="sweethearting">Sweethearting & voids</button>
+      <button type="button" role="tab" data-lane="post_void">Cash till skimming</button>
+      <button type="button" role="tab" data-lane="refunds">Refunds & overrides</button>
+      <button type="button" role="tab" data-lane="universal">Universal / Custom</button>
+    </div>
+
+    <form class="search" id="form" autocomplete="off">
+      <input id="line" placeholder="cashiers scanning ribeye steak, voiding it, and entering bananas" aria-label="What should Clef look for">
+      <button class="btn" id="go" type="submit">Scan with Clef</button>
+    </form>
+
+    <div class="proof" id="proof">
+      <span>Edge AI multimodal decision model</span>
+      <span>No rule engine or complex syntax</span>
+      <span>Natural language criteria</span>
+    </div>
+
+    <div class="plan" id="plan">
+      Evaluates against <b>248 transaction records</b> · Clef Flash 9B · Instant edge decision
+    </div>
+
+    <!-- SAMPLE PREVIEW CARD -->
+    <button class="sample" id="sample" type="button" aria-label="Run example search: sweethearting steak voided then banana PLU">
+      <div class="shead">
+        <span>sweethearting: ribeye steak voided then banana PLU</span>
+        <b>3 matches · $124.50 at risk</b>
+      </div>
+      <div class="srow">
+        <b>Cashier 17 · Lane 01</b>
+        <span class="sem">Prime Filet Mignon ($39.99) voided → Bananas ($0.59)</span>
+        <span class="mono">$39.99 at risk</span>
+        <span class="sok">✓ Clef match (96%)</span>
+      </div>
+      <div class="srow">
+        <b>Cashier 18 · Lane 08</b>
+        <span class="sem">Organic Filet Mignon ($39.99) voided → Bananas ($0.59)</span>
+        <span class="mono">$39.99 at risk</span>
+        <span class="sok">✓ Clef match (92%)</span>
+      </div>
+      <div class="srow">
+        <b>Cashier 17 · Lane 01</b>
+        <span class="sem">Fresh Atlantic Salmon ($24.99) voided → Onions ($0.69)</span>
+        <span class="mono">$24.99 at risk</span>
+        <span class="sok">✓ Clef match (89%)</span>
+      </div>
+      <div class="sfootline">Run this sample scan →</div>
+    </button>
+
+    <!-- TRY SUGGESTIONS -->
+    <div class="try">
+      <div class="ex">
+        <span class="tryh">Try</span>
+        <button class="exb" type="button" data-lane="sweethearting" data-q="cashiers scanning ribeye steak, voiding it, and entering bananas">cashiers scanning ribeye steak, voiding it, and entering bananas</button>
+        <button class="exb" type="button" data-lane="post_void" data-q="completed cash transactions post-voided after customer departure">completed cash transactions post-voided after customer departure</button>
+        <button class="exb" type="button" data-lane="refunds" data-q="unverified cash refunds over $50 without receipt">unverified cash refunds over $50 without receipt</button>
+        <button class="exb" type="button" data-lane="refunds" data-q="attendant security overrides on self-checkout lane 4">attendant security overrides on self-checkout lane 4</button>
+        <button class="exb" type="button" data-lane="universal" data-q="missed high-priority customer emails over 24 hours">missed high-priority customer emails over 24 hours</button>
+      </div>
+    </div>
+
+    <!-- RECENT SEARCHES -->
+    <div class="recent hidden" id="recent">
+      <div class="tryh">Your recent investigations</div>
+      <div id="recentList"></div>
+    </div>
+
+    <div class="sfoot">
+      Clef Store Guard · Edge AI Decision Engine on Cloudflare Workers AI (@cf/cloudflare/clef-flash)
+    </div>
+  </div>
+
+  <!-- RESULTS SECTION -->
+  <div class="results hidden" id="results">
+    <!-- LIVE STATS TICKER -->
+    <div class="live" id="live" aria-live="polite">
+      <div class="lvHead">
+        <span class="lvKick" id="lvKick">Clef Store Guard × Workers AI · live</span>
+        <h2 id="lvTitle">Sweethearting scan-and-void substitutions</h2>
+      </div>
+      <div class="lvStats">
+        <div class="lvStat dark">
+          <label>Records checked</label>
+          <b id="lvFound">248</b>
+          <small id="lvRecordNote">100% evaluated on edge</small>
+          <i><em id="lvBarA" style="width: 100%;"></em></i>
+        </div>
+        <div class="lvStat">
+          <label>Flagged by Clef</label>
+          <b id="lvChecked">3</b>
+          <small id="lvMatch">3 matches passed criteria</small>
+          <i><em id="lvBarB" style="width: 100%;"></em></i>
+        </div>
+        <div class="lvStat risk">
+          <label id="lvImpactLbl">Money at risk</label>
+          <b id="lvImpact">$124.50</b>
+          <small id="lvImpactNote">Cumulative store exposure</small>
+        </div>
+        <div class="lvStat">
+          <label>Edge Latency</label>
+          <b id="lvTime">0.34s</b>
+          <small id="lvModel">@cf/cloudflare/clef-flash</small>
         </div>
       </div>
-      <div id="queueList" class="queue-list" role="list">
-        <!-- Rendered dynamically -->
+    </div>
+
+    <!-- SIDEBAR FILTERS -->
+    <aside class="side" id="side">
+      <div class="sidehead">
+        <b>Filters</b>
+        <button class="link hidden" id="clearAll" type="button">Clear all</button>
       </div>
+      <div class="fnote">Instant. The numbers show how many each one leaves.</div>
+      <div id="groups"></div>
+      <button class="btn sideDone" id="sideDone" type="button">Show results</button>
     </aside>
 
-    <!-- Main Workspace -->
-    <section class="main-workspace">
-      <!-- Real Video Upload & Live Testing Bar -->
-      <div class="card-glass real-video-panel">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <div>
-            <h3 style="font-size: 1.05rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
-              <span>📹 Real Checkout Video Ingestion & Testing</span>
-              <span class="status-pill score-high" style="font-size: 0.7rem;">PURE CLOUDFLARE CLEF (@cf/cloudflare/clef)</span>
-            </h3>
-            <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">
-              Upload real checkout video footage to evaluate directly with Cloudflare Clef multimodal decision model (@cf/cloudflare/clef).
-            </p>
-          </div>
-          <div class="sample-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button id="sampleSkipScanBtn" class="btn btn-outline" style="font-size: 0.8rem; border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">
-              ▶ Real Skip Scan (MP4)
-            </button>
-            <button id="sampleLegitScanBtn" class="btn btn-outline" style="font-size: 0.8rem; border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7;">
-              ▶ Real Clean Scan (MP4)
-            </button>
-            <button id="sampleBobBtn" class="btn btn-outline" style="font-size: 0.8rem; border-color: rgba(245, 158, 11, 0.4); color: #fcd34d;">
-              ▶ Real BOB Water Case (MP4)
-            </button>
-          </div>
-        </div>
-
-        <!-- Video Upload Form -->
-        <div class="upload-controls-row">
-          <label class="drop-zone" id="dropZone">
-            <span id="dropZoneText">📁 Drop real video here (.mp4, .mov, .webm) or click to browse</span>
-            <input type="file" id="videoFileInput" accept="video/mp4,video/quicktime,video/webm" style="display: none;">
-          </label>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <select id="uploadCheckoutType" class="select-scenario" style="padding: 7px 10px;">
-              <option value="auto">✨ Auto-Detect Lane (SCO vs Manned)</option>
-              <option value="cashier">Manned Cashier Lane (Manual Override)</option>
-              <option value="self_checkout">Self-Checkout SCO (Manual Override)</option>
-            </select>
-            <button id="uploadAndAnalyzeBtn" class="btn btn-primary" style="white-space: nowrap;">
-              Analyze Video with Clef
-            </button>
-            <button id="recordWebcamBtn" class="btn btn-outline" style="white-space: nowrap;">
-              🎥 Record Webcam
-            </button>
-          </div>
-        </div>
-        <div id="uploadProgressText" style="display: none; font-size: 0.8rem; color: #38bdf8; margin-top: 6px;">
-          ⏳ Uploading video & running Cloudflare Clef multimodal decision model...
+    <!-- MAIN RESULTS TABLE -->
+    <section class="main">
+      <div class="bar1">
+        <div class="count" id="count">3 matches found</div>
+        <div class="actions" id="actions">
+          <button class="btn ghost sm filtersBtn" id="filtersBtn" type="button">Filters</button>
+          <button class="btn sm" id="copyReportBtn" type="button" data-tip="Copies formatted incident report to clipboard">Copy Report</button>
+          <button class="btn ghost sm" id="csvBtn" type="button" data-tip="Download findings as a spreadsheet">Download CSV</button>
+          <button class="btn ghost sm" id="jsonBtn" type="button" data-tip="Export raw findings as JSON">JSON</button>
         </div>
       </div>
-
-      <!-- Real Video Player & Keyframe Gallery Card -->
-      <div id="realVideoPlayerCard" class="card-glass" style="display: none;">
-        <div class="section-title">
-          <span id="videoPlayerTitle">📹 Real Checkout Video Footage</span>
-          <span id="videoMetaBadge" style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted);">0.0s | 30 FPS</span>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 260px; gap: 14px; align-items: start;">
-          <div>
-            <video id="realVideoPlayer" controls playsinline style="width: 100%; border-radius: var(--radius-md); background: #000; max-height: 380px;"></video>
-            <div style="font-size: 0.78rem; color: var(--text-dim); margin-top: 4px; display: flex; justify-content: space-between;">
-              <span>💡 Click any timeline item below to jump video playback to that exact second.</span>
-              <span id="videoPlaybackTime">00:00 / 00:00</span>
-            </div>
-          </div>
-          <div>
-            <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">
-              Extracted Keyframes
-            </div>
-            <div id="keyframesContainer" style="display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto;">
-              <!-- Populated dynamically -->
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Event Hero Banner -->
-      <div class="card-glass event-hero">
-        <div class="hero-meta">
-          <h2 id="heroEventTitle">
-            <span id="heroEventId">evt_loading</span>
-            <span id="heroPriorityBadge" class="status-pill score-high">HIGH</span>
-            <span id="heroCheckoutTypeBadge" class="status-pill source-visual">SELF CHECKOUT</span>
-            <span id="heroAutoLaneBadge" class="status-pill score-medium" style="font-size: 0.72rem;">AUTO-DETECTED</span>
-          </h2>
-          <div class="hero-sub">
-            <span id="heroStoreLane">Lane: -- | Store: --</span>
-            <span id="heroTimestamp">Time: --</span>
-            <span id="heroPosStatus">POS: Visual Only</span>
-          </div>
-          <!-- Multi-Theft Notification Banner -->
-          <div id="heroTheftAlertBanner" style="margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <!-- Rendered dynamically -->
-          </div>
-          <p id="heroExplanation" style="margin-top: 8px; font-size: 0.92rem; color: var(--text-muted); line-height: 1.4;">
-            Evaluating checkout event...
-          </p>
-        </div>
-
-        <div class="hero-gauges">
-          <div class="gauge-box">
-            <span id="gaugeLossLikelihood" class="gauge-val" style="color: var(--danger);">--%</span>
-            <span class="gauge-label">Overall Loss</span>
-          </div>
-          <div class="gauge-box">
-            <span id="gaugeIntent" class="gauge-val" style="color: #fb923c;">--%</span>
-            <span class="gauge-label">Intentional</span>
-          </div>
-          <div class="gauge-box">
-            <span id="gaugeQuality" class="gauge-val" style="color: #38bdf8;">--%</span>
-            <span class="gauge-label">Evidence Quality</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Retailer 8-Theft Categories Multi-Label Grid -->
-      <div class="card-glass" style="margin-bottom: 14px;">
-        <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span>🛡️ Retailer Theft Taxonomy (8 Auto-Detections)</span>
-            <span id="multiTheftCountBadge" class="status-pill score-medium" style="font-size: 0.72rem;">0 DETECTED</span>
-          </div>
-          <span id="laneTypeExplanationText" style="font-size: 0.78rem; color: var(--text-muted); font-family: var(--font-mono);">
-            Lane: Auto-Detecting...
-          </span>
-        </div>
-        <div id="retailerTheftGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 10px;">
-          <!-- 8 Categories dynamically populated -->
-        </div>
-      </div>
-
-      <!-- Two-column workspace -->
-      <div class="workspace-columns">
-        <!-- Left: Observable Behavior Breakdown & Trajectories -->
-        <div class="card-glass">
-          <div class="section-title">
-            <span>Observable Behavior Probabilities</span>
-            <span id="primaryBehaviorBadge" style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">
-              Primary: Detecting...
-            </span>
-          </div>
-
-          <div id="behaviorProbList" class="prob-list">
-            <!-- Rendered dynamically -->
-          </div>
-
-          <!-- Trajectory Visualizer -->
-          <div class="trajectory-card">
-            <div style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); display: flex; justify-content: space-between;">
-              <span>Merchandise Trajectory Analysis</span>
-              <span id="trajectoryAnomaliesCount" style="color: var(--danger);">--</span>
-            </div>
-            <div id="trajectoryPathContainer" class="trajectory-path">
-              <!-- Dynamically populated -->
-            </div>
-          </div>
-        </div>
-
-        <!-- Right: Chronological Timeline -->
-        <div class="card-glass">
-          <div class="section-title">
-            <span>Event Timeline</span>
-            <button id="viewClipBtn" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.78rem;">
-              🎥 Trajectory Simulator
-            </button>
-          </div>
-          <div id="timelineList" class="timeline-container">
-            <!-- Timeline items rendered dynamically -->
-          </div>
-        </div>
-      </div>
-
-      <!-- Reviewer Controls (The exact action buttons & labels from specification) -->
-      <div class="card-glass review-actions-card">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <h3 style="font-size: 1rem; font-weight: 700;">Human Loss Prevention Review</h3>
-            <p style="font-size: 0.8rem; color: var(--text-muted);">Evaluate observable behavior, transaction mismatch, and intent</p>
-          </div>
-          <span id="currentReviewStatus" class="status-pill score-medium">PENDING REVIEW</span>
-        </div>
-
-        <!-- Action Decision Buttons -->
-        <div class="action-buttons-group">
-          <button type="button" class="btn-decision btn-confirmed-loss" data-decision="confirmed_loss">Confirmed Loss</button>
-          <button type="button" class="btn-decision btn-probably-loss" data-decision="probably_loss">Probably Loss</button>
-          <button type="button" class="btn-decision btn-operational-error" data-decision="operational_error">Operational Error</button>
-          <button type="button" class="btn-decision btn-no-loss" data-decision="no_loss">No Loss</button>
-          <button type="button" class="btn-decision btn-unclear" data-decision="unclear">Unclear</button>
-        </div>
-
-        <!-- Detailed Review Form -->
-        <div class="review-form-grid">
-          <div class="form-group">
-            <label class="form-label" for="reviewLabelSelect">Human Review Outcome Label</label>
-            <select id="reviewLabelSelect" class="form-control">
-              <option value="non_scan">Non-Scan</option>
-              <option value="left_in_cart">Left in Cart</option>
-              <option value="no_sale">No Sale</option>
-              <option value="price_lookup_abuse">Price Look-Up Abuse</option>
-              <option value="suspicious_refund">Suspicious Refund</option>
-              <option value="canceled_transaction">Canceled Transaction</option>
-              <option value="inventory_loss">Inventory Loss</option>
-              <option value="late_night_food_prep">Late Night Food Prep</option>
-              <option value="not_loss">No Loss (Clean Transaction)</option>
-              <option value="operational_error">Operational Error</option>
-              <option value="insufficient_evidence">Insufficient Evidence</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="reviewerIdInput">Reviewer Identifier</label>
-            <input id="reviewerIdInput" class="form-control" type="text" value="analyst_jane_01">
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="reviewerNotesInput">Reviewer Field Notes</label>
-          <input id="reviewerNotesInput" class="form-control" type="text" placeholder="e.g. Verified detergent bypassed scanner directly into shopping bag.">
-        </div>
-
-        <div style="display: flex; justify-content: flex-end; gap: 10px;">
-          <button id="submitReviewBtn" class="btn btn-primary" style="padding: 10px 24px;">Submit Decision</button>
-        </div>
-      </div>
+      <div class="meta" id="meta"></div>
+      <div class="tabs" id="tabs"></div>
+      <div class="prog" id="progWrap"><i id="prog"></i></div>
+      <div class="list" id="list"></div>
     </section>
-  </main>
+  </div>
+</div>
 
-  <!-- Video Clip Simulation Dialog -->
-  <dialog id="clipDialog">
-    <div class="modal-header">
-      <h3 id="clipModalTitle">Checkout Video Evidence Clip</h3>
-      <button type="button" class="btn btn-outline" id="closeClipBtn" style="padding: 4px 8px;">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="video-sim-box">
-        <canvas id="clipCanvas" class="video-sim-canvas" width="640" height="360"></canvas>
-        <div id="clipOverlayTime" class="video-overlay-text">14:03:20 | OVERHEAD_45DEG_SCANNER</div>
-      </div>
-      <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted);">
-        <span id="clipFrameLabel">Event Window: Scanner Approach → Interaction → Bagging</span>
-        <button id="playPauseSimBtn" class="btn btn-outline" style="padding: 2px 10px;">Replay Motion</button>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button type="button" class="btn btn-primary" id="confirmClipDoneBtn">Done Viewing</button>
-    </div>
-  </dialog>
+<!-- CUSTOM DATA & PRESETS DRAWER -->
+<div class="drawerBg hidden" id="drawerBg"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Input Custom Data or Files">
+  <div class="dhead">
+    <b>Input Custom Data or Files</b>
+    <button class="link" id="drawerX" type="button">Close</button>
+  </div>
+  <p class="dsub">Drop any CSV/JSON file or paste transaction records. Clef crunches your exact data.</p>
 
-  <!-- Webcam Recording Dialog -->
-  <dialog id="webcamDialog">
-    <div class="modal-header">
-      <h3>Record Test Checkout Video</h3>
-      <button type="button" class="btn btn-outline" id="closeWebcamBtn" style="padding: 4px 8px;">✕</button>
+  <div class="dsection">
+    <div class="dtitle">1-Click Sample Datasets</div>
+    <div class="preset-chips">
+      <button class="pchip" type="button" data-preset="sweethearting">
+        <div><b>🥩 Retail Sweethearting</b><span>Steak-to-banana voids & substitutions</span></div>
+        <span class="mono">248 rows</span>
+      </button>
+      <button class="pchip" type="button" data-preset="post_void">
+        <div><b>💵 Cash Till Skimming</b><span>Completed cash sales post-voided</span></div>
+        <span class="mono">190 rows</span>
+      </button>
+      <button class="pchip" type="button" data-preset="refunds">
+        <div><b>🧾 Unverified Cash Refunds</b><span>Returns without customer receipt</span></div>
+        <span class="mono">115 rows</span>
+      </button>
+      <button class="pchip" type="button" data-preset="overrides">
+        <div><b>🛡️ Attendant Security Overrides</b><span>Self-checkout supervisor key bypass</span></div>
+        <span class="mono">84 rows</span>
+      </button>
+      <button class="pchip" type="button" data-preset="missed_emails">
+        <div><b>📧 Missed Customer Emails</b><span>SLA response times >24h</span></div>
+        <span class="mono">92 rows</span>
+      </button>
+      <button class="pchip" type="button" data-preset="server_errors">
+        <div><b>💻 Server 500 & Latency Logs</b><span>Upstream timeouts & spikes</span></div>
+        <span class="mono">140 rows</span>
+      </button>
     </div>
-    <div class="modal-body">
-      <div class="video-sim-box">
-        <video id="webcamLiveVideo" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover;"></video>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
-        <span id="recordCountdownText" style="color: var(--text-muted);">Point camera at desk or lane (Cart on left, Scanner center, Bagging right).</span>
-        <button id="startRecordingBtn" class="btn btn-primary" style="background: var(--danger);">Record 5s Clip</button>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button type="button" class="btn btn-outline" id="cancelWebcamBtn">Cancel</button>
-    </div>
-  </dialog>
+  </div>
 
-  <!-- Raw Clef JSON Dialog -->
-  <dialog id="jsonDialog">
-    <div class="modal-header">
-      <h3>Clef Decision State & System One Answers</h3>
-      <button type="button" class="btn btn-outline" id="closeJsonBtn" style="padding: 4px 8px;">✕</button>
+  <div class="dsection">
+    <div class="dtitle">Or Upload Your File</div>
+    <div class="droparea" id="dropArea">
+      <input type="file" id="fileInput" style="display: none;" accept=".csv,.tsv,.json,.txt,.log">
+      <b>Drop CSV, TSV, or JSON file here</b>
+      <span>or click to browse from your computer</span>
     </div>
-    <div class="modal-body">
-      <pre id="rawJsonViewer" class="json-box"></pre>
-    </div>
-    <div class="modal-footer">
-      <button type="button" class="btn btn-primary" id="copyJsonBtn">Copy JSON</button>
-    </div>
-  </dialog>
+    <div class="dfootline" id="fileChosenLabel">No custom file loaded yet</div>
+  </div>
 
-  <!-- Cloudflare Workers AI Credentials Dialog -->
-  <dialog id="configDialog">
-    <div class="modal-header">
-      <h3>⚙️ Cloudflare Workers AI (@cf/cloudflare/clef) Setup</h3>
-      <button type="button" class="btn btn-outline" id="closeConfigBtn" style="padding: 4px 8px;">✕</button>
+  <div class="dsection">
+    <div class="dtitle">Or Paste Raw Records</div>
+    <textarea class="pastebox" id="pasteArea" placeholder="tx_id,store_id,register_id,cashier_id,timestamp,event_type,item_desc,total_price&#10;TX_01,STORE_101,LANE_01,CASHIER_17,2026-09-15 08:00:00,ITEM_SCAN,Filet Mignon,39.99&#10;TX_01,STORE_101,LANE_01,CASHIER_17,2026-09-15 08:00:05,ITEM_VOID,Filet Mignon,39.99&#10;TX_01,STORE_101,LANE_01,CASHIER_17,2026-09-15 08:00:10,ITEM_MANUAL,Bananas,0.59"></textarea>
+    <div class="dfootline">
+      <span id="pasteCounter">0 lines · 0 characters</span>
+      <button class="link" id="clearPasteBtn" type="button">Clear text</button>
     </div>
-    <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-      <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
-        Connect directly to Cloudflare's inference API for <code>@cf/cloudflare/clef</code>. When configured, requests are dispatched live to Cloudflare Workers AI. When unconfigured, the service operates using the local vision motion analysis engine that computes physical probabilities directly from video frames.
-      </p>
-      <div class="form-group">
-        <label class="form-label" for="cfAccountIdInput">Cloudflare Account ID</label>
-        <input id="cfAccountIdInput" class="form-control" type="text" placeholder="e.g. 1a2b3c4d5e6f...">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="cfApiTokenInput">Cloudflare API Token (Workers AI Read/Write)</label>
-        <input id="cfApiTokenInput" class="form-control" type="password" placeholder="Bearer Token with Workers AI permissions">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="cfModelInput">Model Name</label>
-        <input id="cfModelInput" class="form-control" type="text" value="@cf/cloudflare/clef">
-      </div>
-      <div id="cfConfigStatusMsg" style="font-size: 0.82rem; display: none; padding: 8px 12px; border-radius: var(--radius-sm);"></div>
-    </div>
-    <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
-      <button type="button" class="btn btn-outline" id="cancelConfigBtn">Cancel</button>
-      <button type="button" class="btn btn-primary" id="saveConfigBtn">Save & Connect</button>
-    </div>
-  </dialog>
+  </div>
 
-  <script src="app.js"></script>
+  <div style="margin-top: 18px; display: flex; gap: 8px;">
+    <button class="btn" id="applyDataBtn" style="flex: 1;" type="button">Use This Dataset</button>
+    <button class="btn ghost" id="cancelDrawerBtn" type="button">Cancel</button>
+  </div>
+</aside>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script src="/app.js"></script>
 </body>
 </html>

@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>T-Log Intelligence — Retail Loss Prevention System</title>
+  <style>
+    :root {
+      --bg: #F5F5F7;
+      --card-bg: rgba(255, 255, 255, 0.85);
+      --card-border: rgba(0, 0, 0, 0.08);
+      --text-main: #1D1D1F;
+      --text-sub: #86868B;
+      --accent: #0071E3;
+      --accent-hover: #0077ED;
+      --danger: #FF3B30;
+      --danger-bg: rgba(255, 59, 48, 0.12);
+      --warning: #FF9500;
+      --warning-bg: rgba(255, 149, 0, 0.12);
+      --success: #34C759;
+      --success-bg: rgba(52, 199, 89, 0.12);
+      --purple: #AF52DE;
+      --purple-bg: rgba(175, 82, 222, 0.12);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.06);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.45;
+      padding-bottom: 60px;
+    }
+
+    header {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--card-border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 12px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-badge {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #0071E3, #AF52DE);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 16px;
+    }
+    .brand-title {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 4px;
+      background: rgba(0, 0, 0, 0.05);
+      padding: 4px;
+      border-radius: var(--radius-sm);
+    }
+    .tab-btn {
+      border: none;
+      background: none;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-sub);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .tab-btn.active {
+      background: white;
+      color: var(--text-main);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--card-border);
+      background: white;
+      color: var(--text-main);
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn:hover { background: #F9FAFB; }
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      border: none;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+
+    .engine-pill {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: rgba(52, 199, 89, 0.15);
+      color: #15803D;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .engine-dot {
+      width: 6px;
+      height: 6px;
+      background: #15803D;
+      border-radius: 50%;
+    }
+
+    main {
+      max-width: 1360px;
+      margin: 24px auto;
+      padding: 0 24px;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 18px 20px;
+      box-shadow: var(--shadow-sm);
+    }
+    .kpi-label {
+      font-size: 12px;
+      color: var(--text-sub);
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+    .kpi-value {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .kpi-sub {
+      font-size: 11px;
+      color: var(--text-sub);
+      margin-top: 4px;
+    }
+
+    .section-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .table-container {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+    th {
+      padding: 10px 14px;
+      color: var(--text-sub);
+      font-weight: 600;
+      border-bottom: 1px solid var(--card-border);
+    }
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(0, 0, 0, 0.015); cursor: pointer; }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-critical { background: var(--danger-bg); color: var(--danger); }
+    .badge-high { background: var(--warning-bg); color: var(--warning); }
+    .badge-medium { background: rgba(234, 179, 8, 0.15); color: #B45309; }
+    .badge-low { background: var(--success-bg); color: #15803D; }
+
+    .badge-new { background: rgba(0, 113, 227, 0.12); color: var(--accent); }
+    .badge-in_review { background: var(--purple-bg); color: var(--purple); }
+    .badge-verified_loss { background: var(--danger-bg); color: var(--danger); }
+    .badge-legitimate { background: var(--success-bg); color: #15803D; }
+
+    /* Modal / Drawer */
+    .drawer-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      display: none;
+      justify-content: flex-end;
+    }
+    .drawer-overlay.open { display: flex; }
+    .drawer {
+      background: white;
+      width: 100%;
+      max-width: 680px;
+      height: 100%;
+      overflow-y: auto;
+      padding: 32px;
+      box-shadow: -10px 0 30px rgba(0,0,0,0.1);
+    }
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 24px;
+    }
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: var(--text-sub);
+    }
+
+    .timeline {
+      margin: 16px 0;
+      position: relative;
+      padding-left: 20px;
+      border-left: 2px solid #E5E7EB;
+    }
+    .timeline-item {
+      margin-bottom: 14px;
+      position: relative;
+    }
+    .timeline-dot {
+      position: absolute;
+      left: -26px;
+      top: 3px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid white;
+    }
+    .timeline-time { font-size: 11px; color: var(--text-sub); }
+    .timeline-desc { font-size: 13px; font-weight: 500; }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      background: #F9FAFB;
+      padding: 16px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 20px;
+    }
+    .detail-item { font-size: 12px; }
+    .detail-key { color: var(--text-sub); margin-bottom: 2px; }
+    .detail-val { font-weight: 600; color: var(--text-main); }
+
+    .clef-box {
+      background: #F8F9FA;
+      border-left: 4px solid var(--accent);
+      padding: 14px 18px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      margin-bottom: 20px;
+    }
+
+    .controls-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+    .search-input, .select-input {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      background: white;
+      font-size: 13px;
+      outline: none;
+    }
+    .search-input { min-width: 240px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo-badge">TL</div>
+    <div>
+      <div class="brand-title">T-Log Intelligence</div>
+      <div class="brand-sub">Retail Loss Prevention System</div>
+    </div>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
+    <button class="tab-btn" onclick="switchTab('investigations')">Investigations Queue</button>
+    <button class="tab-btn" onclick="switchTab('analytics')">Cashier Analytics</button>
+    <button class="tab-btn" onclick="switchTab('ingest')">Import Logs</button>
+  </div>
+
+  <div class="header-actions">
+    <a href="/" class="btn" style="padding: 6px 12px; font-size: 12px;">⚡ Simple Mode</a>
+    <div class="engine-pill" id="engine-status">
+      <div class="engine-dot"></div>
+      <span id="engine-text">Clef-Flash (MLX)</span>
+    </div>
+    <a href="/api/export/pdf" class="btn" target="_blank">Export PDF</a>
+    <a href="/api/export/xlsx" class="btn" target="_blank">Export Excel</a>
+    <a href="/api/export/csv" class="btn" target="_blank">Export CSV</a>
+    <button class="btn btn-primary" onclick="runAnalysis()">Run Analysis</button>
+  </div>
+</header>
+
+<main>
+  <!-- TAB: DASHBOARD -->
+  <section id="tab-dashboard">
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Transactions Analyzed</div>
+        <div class="kpi-value" id="kpi-tx">0</div>
+        <div class="kpi-sub" id="kpi-stores">Across 0 stores</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Potential Exposure at Risk</div>
+        <div class="kpi-value" id="kpi-exposure">$0.00</div>
+        <div class="kpi-sub">Calculated value at risk</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Confirmed Financial Loss</div>
+        <div class="kpi-value" style="color: var(--danger)" id="kpi-loss">$0.00</div>
+        <div class="kpi-sub">Investigator verified</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">High-Priority Cases</div>
+        <div class="kpi-value" style="color: var(--warning)" id="kpi-high-prio">0</div>
+        <div class="kpi-sub" id="kpi-unreviewed">0 unreviewed cases</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Anomalies Discovered</div>
+        <div class="kpi-value" id="kpi-anom">0</div>
+        <div class="kpi-sub">Unsupervised patterns</div>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title">Prioritized Loss-Prevention Findings</div>
+        <span style="font-size: 12px; color: var(--text-sub)">Ranked by Clef Decision Model & Risk Exposure</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>Category</th>
+              <th>Finding Title</th>
+              <th>Store / Cashier</th>
+              <th>Exposure At Risk</th>
+              <th>Clef Confidence</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="top-findings-tbody">
+            <tr><td colspan="7" style="text-align: center; color: var(--text-sub); padding: 24px;">Loading findings...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: INVESTIGATIONS QUEUE -->
+  <section id="tab-investigations" style="display: none;">
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title">Investigation Case Queue</div>
+      </div>
+      <div class="controls-bar">
+        <input type="text" class="search-input" id="search-filter" placeholder="Search finding title or cashier..." oninput="filterCases()">
+        <select class="select-input" id="priority-filter" onchange="filterCases()">
+          <option value="">All Priorities</option>
+          <option value="CRITICAL">Critical</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
+        </select>
+        <select class="select-input" id="status-filter" onchange="filterCases()">
+          <option value="">All Statuses</option>
+          <option value="NEW">New</option>
+          <option value="IN_REVIEW">In Review</option>
+          <option value="VERIFIED_LOSS">Verified Loss</option>
+          <option value="LEGITIMATE">Legitimate</option>
+          <option value="SUPPRESSED">Suppressed</option>
+        </select>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>Category</th>
+              <th>Finding Title</th>
+              <th>Primary TX</th>
+              <th>Cashier</th>
+              <th>Register</th>
+              <th>Exposure</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="all-findings-tbody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: CASHIER ANALYTICS -->
+  <section id="tab-analytics" style="display: none;">
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title">Cashier Peer Group Distribution & Void Rates</div>
+        <span style="font-size: 12px; color: var(--text-sub)">Robust MAD Peer Baselines (Volume Adjusted)</span>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Cashier ID</th>
+              <th>Tx Count</th>
+              <th>Total Items</th>
+              <th>Total Voids</th>
+              <th>Void Rate</th>
+              <th>Manual Entry Rate</th>
+              <th>No-Sale Rate</th>
+              <th>Avg Basket</th>
+            </tr>
+          </thead>
+          <tbody id="cashier-analytics-tbody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: INGEST LOGS -->
+  <section id="tab-ingest" style="display: none;">
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-title">Import Grocery POS Transaction Logs</div>
+      </div>
+      <p style="font-size: 13px; color: var(--text-sub); margin-bottom: 18px;">
+        Accepts CSV, JSON, JSONL, POSLog XML, and ZIP archives. Automatically infers field schemas and validates transaction boundaries.
+      </p>
+      <div style="display: flex; gap: 10px; margin-bottom: 24px;">
+        <input type="text" id="ingest-file-path" class="search-input" style="flex: 1;" value="data/synthetic_50k_tlogs.csv">
+        <button class="btn btn-primary" onclick="submitIngest()">Ingest & Normalize</button>
+      </div>
+      <div id="ingest-result" style="display: none; background: #F9FAFB; padding: 20px; border-radius: var(--radius-sm); border: 1px solid var(--card-border);">
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- DETAIL DRAWER -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer(event)">
+  <div class="drawer" onclick="event.stopPropagation()">
+    <div class="drawer-header">
+      <div>
+        <span class="badge" id="d-prio">HIGH</span>
+        <h2 style="font-size: 20px; font-weight: 700; margin-top: 8px;" id="d-title">Finding Title</h2>
+        <div style="font-size: 12px; color: var(--text-sub); margin-top: 2px;" id="d-id">FIND_001</div>
+      </div>
+      <button class="close-btn" onclick="closeDrawer()">&times;</button>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-item"><div class="detail-key">Primary Store</div><div class="detail-val" id="d-store">STORE_101</div></div>
+      <div class="detail-item"><div class="detail-key">Register / Lane</div><div class="detail-val" id="d-reg">LANE_01</div></div>
+      <div class="detail-item"><div class="detail-key">Cashier ID</div><div class="detail-val" id="d-cashier">CASHIER_01</div></div>
+      <div class="detail-item"><div class="detail-key">Financial Exposure At Risk</div><div class="detail-val" style="color: var(--danger)" id="d-exposure">$39.99</div></div>
+    </div>
+
+    <div class="clef-box">
+      <div style="font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 4px;">CLOUDFLARE CLEF SYSTEM ONE DECISION</div>
+      <div style="font-size: 13px;" id="d-clef-pattern">Pattern: Price Substitution (Confidence: 89.2%)</div>
+      <div style="font-size: 12px; color: var(--text-sub); margin-top: 4px;" id="d-clef-probs">Probabilities: price_substitution: 0.89, ordinary_correction: 0.05</div>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 6px;">What Happened</h3>
+      <p style="font-size: 13px; color: var(--text-main);" id="d-what"></p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 6px;">Why It Is Unusual</h3>
+      <p style="font-size: 13px; color: var(--text-sub);" id="d-why"></p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 6px;">Alternative Operational Explanations</h3>
+      <ul style="font-size: 12px; color: var(--text-sub); padding-left: 18px;" id="d-alts"></ul>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 6px;">Recommended Investigation Action</h3>
+      <p style="font-size: 13px; font-weight: 500; color: #1E40AF; background: #EFF6FF; padding: 10px; border-radius: 6px;" id="d-action"></p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 6px;">Transaction Event Timeline</h3>
+      <div class="timeline" id="d-timeline"></div>
+    </div>
+
+    <hr style="border: none; border-top: 1px solid var(--card-border); margin: 24px 0;">
+
+    <div>
+      <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">Investigator Disposition</h3>
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <button class="btn" onclick="updateDisposition('IN_REVIEW')">Mark In Review</button>
+        <button class="btn" style="color: var(--danger)" onclick="updateDisposition('VERIFIED_LOSS')">Confirm Verified Loss</button>
+        <button class="btn" style="color: #15803D" onclick="updateDisposition('LEGITIMATE')">Mark Legitimate</button>
+        <button class="btn" onclick="updateDisposition('SUPPRESSED')">Suppress Pattern</button>
+      </div>
+      <textarea id="investigator-note" style="width: 100%; height: 70px; padding: 8px; border-radius: 6px; border: 1px solid var(--card-border); font-family: inherit; font-size: 12px;" placeholder="Add investigative note or CCTV reference..."></textarea>
+      <button class="btn btn-primary" style="margin-top: 8px;" onclick="saveNote()">Save Note</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let allFindings = [];
+  let currentFinding = null;
+
+  async function loadData() {
+    try {
+      const statusRes = await fetch('/api/status');
+      const status = await statusRes.json();
+      document.getElementById('engine-text').innerText = `${status.clef_model} (${status.clef_engine})`;
+
+      const kpiRes = await fetch('/api/kpis');
+      const kpis = await kpiRes.json();
+      document.getElementById('kpi-tx').innerText = Number(kpis.total_transactions).toLocaleString();
+      document.getElementById('kpi-stores').innerText = `Across ${kpis.store_count} stores (${kpis.cashier_count} cashiers)`;
+      document.getElementById('kpi-exposure').innerText = `$${Number(kpis.total_exposure_at_risk).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+      document.getElementById('kpi-loss').innerText = `$${Number(kpis.confirmed_loss).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+      document.getElementById('kpi-high-prio').innerText = kpis.high_priority_findings;
+      document.getElementById('kpi-unreviewed').innerText = `${kpis.unreviewed_count} unreviewed cases`;
+      document.getElementById('kpi-anom').innerText = kpis.total_anomalies_discovered;
+
+      const fRes = await fetch('/api/findings?limit=100');
+      allFindings = await fRes.json();
+      renderFindings(allFindings);
+
+      loadAnalytics();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function renderFindings(findings) {
+    const topTbody = document.getElementById('top-findings-tbody');
+    const allTbody = document.getElementById('all-findings-tbody');
+    topTbody.innerHTML = '';
+    allTbody.innerHTML = '';
+
+    if (findings.length === 0) {
+      topTbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--text-sub);">No findings generated yet. Click "Run Analysis" or "Import Logs".</td></tr>';
+      return;
+    }
+
+    findings.slice(0, 10).forEach(f => {
+      const tr = document.createElement('tr');
+      tr.onclick = () => openDrawer(f.finding_id);
+      tr.innerHTML = `
+        <td><span class="badge badge-${f.priority.toLowerCase()}">${f.priority}</span></td>
+        <td><span style="font-size: 11px; font-weight: 600; color: var(--text-sub);">${f.category}</span></td>
+        <td><strong>${f.title}</strong></td>
+        <td>${f.store_ids ? f.store_ids[0] : ''} / ${f.cashier_ids ? f.cashier_ids[0] : ''}</td>
+        <td>$${Number(f.financial_exposure_at_risk).toFixed(2)}</td>
+        <td>${Math.round(f.clef_confidence * 100)}%</td>
+        <td><span class="badge badge-${(f.status || 'NEW').toLowerCase()}">${f.status || 'NEW'}</span></td>
+      `;
+      topTbody.appendChild(tr);
+    });
+
+    findings.forEach(f => {
+      const tr = document.createElement('tr');
+      tr.onclick = () => openDrawer(f.finding_id);
+      tr.innerHTML = `
+        <td><span class="badge badge-${f.priority.toLowerCase()}">${f.priority}</span></td>
+        <td><span style="font-size: 11px; font-weight: 600; color: var(--text-sub);">${f.category}</span></td>
+        <td><strong>${f.title}</strong></td>
+        <td><code>${f.evidence_tx_ids ? f.evidence_tx_ids[0] : ''}</code></td>
+        <td>${f.cashier_ids ? f.cashier_ids[0] : ''}</td>
+        <td>${f.register_ids ? f.register_ids[0] : ''}</td>
+        <td>$${Number(f.financial_exposure_at_risk).toFixed(2)}</td>
+        <td><span class="badge badge-${(f.status || 'NEW').toLowerCase()}">${f.status || 'NEW'}</span></td>
+        <td><button class="btn" style="padding: 4px 8px; font-size: 11px;" onclick="event.stopPropagation(); openDrawer('${f.finding_id}')">Investigate</button></td>
+      `;
+      allTbody.appendChild(tr);
+    });
+  }
+
+  async function openDrawer(findingId) {
+    const res = await fetch(`/api/findings/${findingId}`);
+    const f = await res.json();
+    currentFinding = f;
+
+    document.getElementById('d-prio').className = `badge badge-${f.priority.toLowerCase()}`;
+    document.getElementById('d-prio').innerText = f.priority;
+    document.getElementById('d-title').innerText = f.title;
+    document.getElementById('d-id').innerText = f.finding_id;
+    document.getElementById('d-store').innerText = (f.store_ids || []).join(', ');
+    document.getElementById('d-reg').innerText = (f.register_ids || []).join(', ');
+    document.getElementById('d-cashier').innerText = (f.cashier_ids || []).join(', ');
+    document.getElementById('d-exposure').innerText = `$${Number(f.financial_exposure_at_risk).toFixed(2)}`;
+
+    const clef = f.clef_decision || {};
+    const chosen = (clef.chosen_labels || {}).pattern_type || 'Unknown';
+    document.getElementById('d-clef-pattern').innerText = `Pattern: ${chosen.replace(/_/g, ' ')} (Confidence: ${Math.round((f.clef_confidence || 0.8) * 100)}%)`;
+    document.getElementById('d-clef-probs').innerText = JSON.stringify(clef.answers || {});
+
+    document.getElementById('d-what').innerText = f.what_happened;
+    document.getElementById('d-why').innerText = f.why_unusual;
+
+    const altsList = document.getElementById('d-alts');
+    altsList.innerHTML = '';
+    (f.alternative_explanations || []).forEach(a => {
+      const li = document.createElement('li');
+      li.innerText = a;
+      altsList.appendChild(li);
+    });
+
+    document.getElementById('d-action').innerText = f.recommended_investigation;
+
+    // Timeline
+    const timelineEl = document.getElementById('d-timeline');
+    timelineEl.innerHTML = '';
+    const events = (f.primary_transaction && f.primary_transaction.timeline_events) || f.supporting_events || [];
+    events.forEach(ev => {
+      const item = document.createElement('div');
+      item.className = 'timeline-item';
+      item.innerHTML = `
+        <div class="timeline-dot"></div>
+        <div class="timeline-time">${(ev.timestamp || '').split('T')[1] || ev.timestamp} &bull; Seq ${ev.event_seq}</div>
+        <div class="timeline-desc">${ev.event_type}: ${ev.item_desc || ev.tender_type || ''} ${ev.total_price ? '($' + Number(ev.total_price).toFixed(2) + ')' : ''}</div>
+      `;
+      timelineEl.appendChild(item);
+    });
+
+    document.getElementById('drawer-overlay').classList.add('open');
+  }
+
+  function closeDrawer(e) {
+    document.getElementById('drawer-overlay').classList.remove('open');
+  }
+
+  async function updateDisposition(status) {
+    if (!currentFinding) return;
+    const loss = status === 'VERIFIED_LOSS' ? currentFinding.financial_exposure_at_risk : null;
+    await fetch(`/api/findings/${currentFinding.finding_id}/status`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: status, confirmed_loss: loss})
+    });
+    closeDrawer();
+    loadData();
+  }
+
+  async function saveNote() {
+    if (!currentFinding) return;
+    const note = document.getElementById('investigator-note').value;
+    if (!note) return;
+    await fetch(`/api/findings/${currentFinding.finding_id}/status`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: currentFinding.status, note: note})
+    });
+    alert('Note saved!');
+    document.getElementById('investigator-note').value = '';
+  }
+
+  function filterCases() {
+    const q = document.getElementById('search-filter').value.toLowerCase();
+    const prio = document.getElementById('priority-filter').value;
+    const st = document.getElementById('status-filter').value;
+
+    const filtered = allFindings.filter(f => {
+      const matchQ = !q || f.title.toLowerCase().includes(q) || (f.cashier_ids || []).join(' ').toLowerCase().includes(q);
+      const matchPrio = !prio || f.priority === prio;
+      const matchSt = !st || (f.status || 'NEW') === st;
+      return matchQ && matchPrio && matchSt;
+    });
+    renderFindings(filtered);
+  }
+
+  async function loadAnalytics() {
+    const res = await fetch('/api/analytics/cashiers');
+    const cashiers = await res.json();
+    const tbody = document.getElementById('cashier-analytics-tbody');
+    tbody.innerHTML = '';
+    cashiers.forEach(c => {
+      const tr = document.createElement('tr');
+      const isOutlier = c.void_rate > 0.08;
+      tr.innerHTML = `
+        <td><strong>${c.cashier_id}</strong> ${isOutlier ? '<span class="badge badge-high">Outlier</span>' : ''}</td>
+        <td>${c.tx_count}</td>
+        <td>${c.total_items}</td>
+        <td>${c.total_voids}</td>
+        <td><strong>${(c.void_rate * 100).toFixed(1)}%</strong></td>
+        <td>${(c.manual_rate * 100).toFixed(1)}%</td>
+        <td>${(c.no_sale_rate * 100).toFixed(1)}%</td>
+        <td>$${c.avg_basket}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function submitIngest() {
+    const path = document.getElementById('ingest-file-path').value;
+    const res = await fetch('/api/ingest', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({file_path: path})
+    });
+    const data = await res.json();
+    const resultEl = document.getElementById('ingest-result');
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = `
+      <h3 style="font-size: 15px; font-weight: 700; color: #15803D; margin-bottom: 8px;">Import & Reconciliation Successful!</h3>
+      <p style="font-size: 13px;">${data.quality_report.quality_summary}</p>
+      <div style="margin-top: 10px; font-size: 12px; color: var(--text-sub);">
+        <div>&bull; Deduplicated Events: ${data.quality_report.duplicate_events_deduped}</div>
+        <div>&bull; Suspended-Resumed Matched: ${data.quality_report.suspended_resumed_count}</div>
+        <div>&bull; Data Hygiene Score: ${data.quality_report.data_hygiene_score}%</div>
+      </div>
+    `;
+    loadData();
+  }
+
+  async function runAnalysis() {
+    const btn = document.querySelector('.btn-primary');
+    btn.innerText = 'Analyzing...';
+    try {
+      const res = await fetch('/api/analyze', {method: 'POST'});
+      const data = await res.json();
+      alert(`Analysis complete!\nAnalyzed ${data.transactions_analyzed} transactions.\nGenerated ${data.findings_generated} findings.`);
+      loadData();
+    } finally {
+      btn.innerText = 'Run Analysis';
+    }
+  }
+
+  function switchTab(tab) {
+    ['dashboard', 'investigations', 'analytics', 'ingest'].forEach(t => {
+      document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
+    });
+    document.querySelectorAll('.tab-btn').forEach((b, i) => {
+      b.classList.toggle('active', ['dashboard', 'investigations', 'analytics', 'ingest'][i] === tab);
+    });
+  }
+
+  window.onload = loadData;
+</script>
+</body>
+</html>

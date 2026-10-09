@@ -26,13 +26,96 @@ const upload = multer({
     storage,
     limits: { fileSize: 250 * 1024 * 1024 }, // 250MB video limit
 });
+// @ts-ignore
+import worker from '../../cloudflare/worker.js';
 export function createServer(service) {
     const app = express();
     app.use(cors());
     app.use(express.json({ limit: '50mb' }));
+    app.use(express.urlencoded({ extended: true, limit: '50mb' }));
     // Serve static assets from public/
     const publicDir = path.resolve(__dirname, '../../public');
     app.use(express.static(publicDir));
+    // Bridge universal crunch and sample endpoints to Cloudflare worker engine
+    const forwardToWorker = async (req, res) => {
+        try {
+            const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+            const headers = new Headers();
+            for (const [key, value] of Object.entries(req.headers)) {
+                if (value && typeof value === 'string') {
+                    headers.set(key, value);
+                }
+                else if (Array.isArray(value)) {
+                    headers.set(key, value.join(', '));
+                }
+            }
+            let body = undefined;
+            if (req.method !== 'GET' && req.method !== 'HEAD') {
+                body = JSON.stringify(req.body);
+                headers.set('content-type', 'application/json');
+            }
+            const webReq = new Request(url, {
+                method: req.method,
+                headers,
+                body,
+            });
+            const workerRes = await worker.fetch(webReq, {
+                CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+                CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN,
+                ...process.env,
+            });
+            res.status(workerRes.status);
+            workerRes.headers.forEach((val, key) => {
+                res.setHeader(key, val);
+            });
+            const resText = await workerRes.text();
+            res.send(resText);
+        }
+        catch (err) {
+            console.error('[Worker Forward Error]', err);
+            res.status(500).json({ error: String(err?.message || err) });
+        }
+    };
+    const uploadCrunchFile = upload.single('file');
+    app.post('/api/crunch', uploadCrunchFile, async (req, res) => {
+        try {
+            let rawData = req.body.data || '';
+            if (req.file && fs.existsSync(req.file.path)) {
+                rawData = fs.readFileSync(req.file.path, 'utf8');
+            }
+            const userQuery = req.body.query || '';
+            const model = req.body.model || '@cf/cloudflare/clef-flash';
+            const minConfidence = parseFloat(req.body.min_confidence) || 0.50;
+            const webReq = new Request(`http://localhost:${process.env.PORT || 3000}/api/crunch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    data: rawData,
+                    query: userQuery,
+                    model,
+                    min_confidence: minConfidence,
+                }),
+            });
+            const workerRes = await worker.fetch(webReq, {
+                CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+                CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN,
+                ...process.env,
+            });
+            res.status(workerRes.status);
+            workerRes.headers.forEach((val, key) => {
+                res.setHeader(key, val);
+            });
+            const resText = await workerRes.text();
+            res.send(resText);
+        }
+        catch (err) {
+            res.status(500).json({ error: String(err?.message || err) });
+        }
+    });
+    app.all('/api/upload-and-analyze', forwardToWorker);
+    app.all('/api/analyze-sample', forwardToWorker);
+    app.all('/api/sample-data', forwardToWorker);
+    app.all('/api/export/csv', forwardToWorker);
     // Health and Clef Model status
     app.get('/api/status', (req, res) => {
         const clef = service.getClefClient();
