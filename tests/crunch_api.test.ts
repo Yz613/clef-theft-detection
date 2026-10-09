@@ -108,6 +108,30 @@ TX_901,STORE_101,LANE_02,CASHIER_99,2026-10-08 14:00:10,ITEM_MANUAL,Yellow Banan
     expect(json.incidents.length).toBeGreaterThan(0);
   });
 
+  it('detects high void transactions over numeric threshold in custom CSV data', async () => {
+    const csv = `id,timestamp,cashier_id,store_id,amount,item_count,void_count,flag_type
+TX-101,2026-03-30T14:22:00Z,EMP-409,Austin North,142.50,1,3,SCAN_AND_VOID
+TX-102,2026-03-30T14:35:00Z,EMP-102,Dallas West,18.50,3,0,NORMAL`;
+
+    const res = await fetch(`http://localhost:${port}/api/crunch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        data: csv,
+        query: 'flag transactions with high voids over $100',
+        model: '@cf/cloudflare/clef-flash',
+        min_confidence: 0.50,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.status).toBe('success');
+    expect(json.summary.records_checked).toBe(2);
+    expect(json.incidents.length).toBe(1);
+    expect(json.incidents[0].entity).toBe('EMP-409');
+    expect(json.incidents[0].impact_value).toBe(142.5);
+  });
+
   it('exports matched findings to CSV via POST /api/export/csv', async () => {
     const incidents = [
       {

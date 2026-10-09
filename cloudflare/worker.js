@@ -815,15 +815,29 @@ function normalizeUniversalRecord(obj, lineNum) {
 
   const timestamp = getField(["timestamp", "sent_at", "datetime", "created_at", "date_time", "time", "date"], "");
 
-  const status = getField(["status", "state", "event_type", "action", "resolution", "code", "event"], "NORMAL").toUpperCase();
+  const status = getField(["status", "state", "event_type", "action", "flag_type", "flag", "type", "resolution", "code", "event", "anomaly"], "NORMAL").toUpperCase();
 
   const numericMetric = getNumField([
-    "hours_unanswered", "response_time", "delay_hours", "hours", "total_price", "amount", "price", "latency", "latency_ms", "duration", "cost", "total"
+    "hours_unanswered", "response_time", "delay_hours", "hours", "total_price", "amount", "price", "latency", "latency_ms", "duration", "cost", "total", "void_count", "voids", "count", "qty"
   ], 0.0);
 
-  const textContent = getField([
+  let textContent = getField([
     "subject", "message", "body", "item_desc", "description", "title", "error", "error_message", "notes", "query"
-  ], "Standard Activity");
+  ], "");
+
+  if (!textContent) {
+    const descriptiveParts = [];
+    if (obj.flag_type) descriptiveParts.push(`Flag: ${obj.flag_type}`);
+    if (obj.void_count && Number(obj.void_count) > 0) descriptiveParts.push(`Voids: ${obj.void_count}`);
+    if (obj.amount) descriptiveParts.push(`Amount: $${obj.amount}`);
+    if (obj.price) descriptiveParts.push(`Price: $${obj.price}`);
+    if (obj.store_id) descriptiveParts.push(`Store: ${obj.store_id}`);
+    if (descriptiveParts.length > 0) {
+      textContent = descriptiveParts.join(" | ");
+    } else {
+      textContent = Object.entries(obj).slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(", ") || "Standard Activity";
+    }
+  }
 
   const priority = getField(["priority", "severity", "urgency", "level", "tier"], "NORMAL").toUpperCase();
 
@@ -1128,6 +1142,25 @@ function extractUniversalCandidates(records, userQuery, domainInfo) {
         });
       }
 
+      // High void, scan-and-void or anomaly flag
+      const voidCount = parseFloat(r.rawAttributes.void_count || r.rawAttributes.voids || "0");
+      if (
+        r.status.includes("SCAN_AND_VOID") ||
+        r.status.includes("VOID") ||
+        voidCount > 0 ||
+        r.status.includes("FLAG") ||
+        r.status.includes("ANOMALY")
+      ) {
+        cg.highVoids.push({
+          txId: r.rawAttributes.tx_id || r.id,
+          price: r.numericMetric > 0 ? r.numericMetric : 50.0,
+          voidCount: voidCount || 1,
+          item: r.textContent,
+          timestamp: r.timestamp,
+          status: r.status,
+        });
+      }
+
       // Refund
       if (r.status.includes("REFUND") || r.status.includes("RETURN")) {
         cg.refunds.push({
@@ -1180,24 +1213,70 @@ function extractUniversalCandidates(records, userQuery, domainInfo) {
           evidenceDetails: `Post-void count: ${cg.postVoids.length} | Exposure: $${exp.toFixed(2)}`,
         });
       }
+
+      if (cg.highVoids.length > 0) {
+        for (const hv of cg.highVoids) {
+          candidates.push({
+            title: `High Void Transaction Flagged (${hv.txId})`,
+            entity: cid,
+            entityLabel: "Cashier",
+            context: cg.lane,
+            contextLabel: "Register / Lane",
+            timestamp: hv.timestamp || cg.latestTimestamp,
+            numericMetric: hv.price,
+            patternName: "High Void / Till Anomaly",
+            defaultSeverity: hv.price >= 100 || hv.voidCount >= 3 ? "CRITICAL" : "HIGH",
+            details: `Transaction ${hv.txId} flagged with ${hv.voidCount} item void(s) totaling $${hv.price.toFixed(2)}. Status: ${hv.status}.`,
+            recommendation: `Audit register receipts for transaction ${hv.txId} and verify supervisor void authorizations.`,
+            evidenceIds: [hv.txId],
+            evidenceDetails: `Transaction: ${hv.txId} | Amount: $${hv.price.toFixed(2)} | Voids: ${hv.voidCount}`,
+          });
+        }
+      }
     }
 
     if (candidates.length > 0) return candidates;
   }
 
   // Domain 3: General Evaluation of Individual Records against Query Terms
+  const numOverMatch = qLower.match(/(?:over|above|exceeding|greater than|>)\s*\$?([0-9]+(?:\.[0-9]+)?)/);
+  const targetThresholdOver = numOverMatch ? parseFloat(numOverMatch[1]) : null;
+
+  const numUnderMatch = qLower.match(/(?:under|below|less than|<)\s*\$?([0-9]+(?:\.[0-9]+)?)/);
+  const targetThresholdUnder = numUnderMatch ? parseFloat(numUnderMatch[1]) : null;
+
+  const queryWords = qLower.split(/[\s,._-]+/).filter((w) => w.length >= 3 && !["look", "find", "for", "the", "and", "with", "that", "all", "get", "show"].includes(w));
+
   for (const r of records) {
-    const rawLower = (r.rawText + " " + r.textContent + " " + r.status + " " + r.primaryEntity).toLowerCase();
-    const queryWords = qLower.split(/\s+/).filter((w) => w.length >= 3 && !["look", "find", "for", "the", "and", "with", "that"].includes(w));
+    const rawLower = (r.rawText + " " + r.textContent + " " + r.status + " " + r.primaryEntity + " " + r.secondaryEntity).toLowerCase();
 
     let score = 0;
     for (const w of queryWords) {
-      if (rawLower.includes(w)) score++;
+      const stem = w.endsWith("s") && w.length > 3 ? w.slice(0, -1) : w;
+      if (rawLower.includes(w) || rawLower.includes(stem)) score++;
+    }
+
+    // Check threshold conditions
+    if (targetThresholdOver !== null && r.numericMetric > targetThresholdOver) {
+      score += 3;
+    }
+    if (targetThresholdUnder !== null && r.numericMetric < targetThresholdUnder) {
+      score += 3;
     }
 
     // Include if word overlap exists or if record status indicates exception
-    if (score > 0 || r.priority === "HIGH" || r.priority === "CRITICAL" || r.status.includes("ERROR") || r.status.includes("VOID") || r.status.includes("UNANSWERED")) {
-      const sev = r.priority === "CRITICAL" || r.numericMetric > 500 ? "CRITICAL" : (score >= 2 || r.priority === "HIGH" ? "HIGH" : "MEDIUM");
+    if (
+      score > 0 ||
+      r.priority === "HIGH" ||
+      r.priority === "CRITICAL" ||
+      r.status.includes("ERROR") ||
+      r.status.includes("VOID") ||
+      r.status.includes("UNANSWERED") ||
+      r.status.includes("FLAG")
+    ) {
+      const sev = r.priority === "CRITICAL" || r.numericMetric > 500 || (targetThresholdOver && r.numericMetric > targetThresholdOver)
+        ? "CRITICAL"
+        : (score >= 2 || r.priority === "HIGH" ? "HIGH" : "MEDIUM");
       candidates.push({
         title: `Flagged Record (${r.id}): ${r.textContent.slice(0, 45)}`,
         entity: r.primaryEntity,
