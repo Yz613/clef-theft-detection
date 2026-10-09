@@ -272,12 +272,12 @@ async function crunchDataWithClef(rawText, userQuery, modelName, minConfidence, 
     // Execute Clef inference (via env.AI or high-fidelity edge evaluator)
     const clefAnswers = await evaluateClef(env, modelName, clefState, clefQuestions, candidate, userQuery);
 
-    const matchNoul = clefAnswers.matches_criteria?.noul ?? 0.85;
-    const severityChoice = clefAnswers.severity?.choice || candidate.defaultSeverity || "HIGH";
-    const priorityScore = clefAnswers.action_priority?.score ?? 3.2;
+    const matchNoul = typeof clefAnswers?.matches_criteria?.noul === "number" ? clefAnswers.matches_criteria.noul : 0.85;
+    const severityChoice = String(clefAnswers?.severity?.choice || candidate.defaultSeverity || "HIGH").toUpperCase();
+    const priorityScore = typeof clefAnswers?.action_priority?.score === "number" ? clefAnswers.action_priority.score : 3.2;
 
-    // Filter by match threshold: include if noul match passes or severity is critical/high
-    const matchPassed = matchNoul >= (minConfidence * 0.7) || severityChoice === "critical" || severityChoice === "high";
+    // Filter by match threshold: include if noul match passes or severity is critical/high/medium
+    const matchPassed = matchNoul >= (minConfidence * 0.6) || severityChoice === "CRITICAL" || severityChoice === "HIGH" || severityChoice === "MEDIUM";
 
     if (matchPassed) {
       totalImpactSum += candidate.numericMetric;
@@ -896,6 +896,8 @@ async function evaluateClef(env, modelName, stateStr, questions, candidate, user
       const res = await env.AI.run(fullModelName, payload);
       if (res && res.answers) return res.answers;
       if (res && res.result && res.result.answers) return res.result.answers;
+      if (res && (res.matches_criteria || res.severity)) return res;
+      if (res && res.result && (res.result.matches_criteria || res.result.severity)) return res.result;
     } catch (err) {
       console.warn("Workers AI Clef binding run failed, trying REST API or edge evaluator:", err);
     }
