@@ -709,8 +709,8 @@ function drawFindingsList() {
   let html = `
     <div class="row head">
       <div>${isDiscovery ? "Store / Entity" : "Entity / Cashier"}</div>
-      <div>${isDiscovery ? "Rating / Footprint" : "Risk / Exposure"}</div>
-      <div>${isDiscovery ? "Store Overview & Specialties" : "Activity & Summary"}</div>
+      <div>${isDiscovery ? "Footprint / Metric" : "Risk / Exposure"}</div>
+      <div class="head-nl">What Clef Thinks It Found</div>
       <div>${isDiscovery ? "Operational Notes" : "CCTV / Action"}</div>
       <div>Clef Verdict</div>
     </div>
@@ -732,9 +732,10 @@ function drawFindingsList() {
           ${item.impact_formatted || item.impact_value || "—"}
           <small>${escH(item.clef_pattern || "Verified")}</small>
         </div>
-        <div class="cell-details">
-          ${escH(item.summary || "")}
-          <small>${escH(item.evidence_details || item.evidence_records?.join(" · ") || "")}</small>
+        <div class="cell-explanation">
+          <div class="nl-badge"><span class="nl-sparkle">✦</span> Clef Analysis</div>
+          <div class="nl-speech">${escH(item.clef_explanation || item.summary || "")}</div>
+          <small class="nl-meta">${escH(item.evidence_details || item.evidence_records?.join(" · ") || "")}</small>
         </div>
         <div class="cell-action">
           <b>${isDiscovery ? "Operations & POS" : "CCTV / Review"}</b>
@@ -782,8 +783,9 @@ function setupExportActions() {
       items.forEach((item, idx) => {
         text += `${idx + 1}. ${item.title || item.entity} (${item.context})\n`;
         text += `   Metric: ${item.impact_formatted || item.impact_value}\n`;
-        text += `   Summary: ${item.summary}\n`;
-        text += `   Notes: ${item.what_to_do}\n\n`;
+        text += `   What Clef Thinks It Found: ${item.clef_explanation || item.summary}\n`;
+        text += `   Action: ${item.what_to_do}\n`;
+        text += `   Verdict: ${item.clef_match_pct || "Match"} (${item.severity || "HIGH"})\n\n`;
       });
 
       navigator.clipboard.writeText(text).then(() => {

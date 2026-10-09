@@ -130,9 +130,11 @@ TX-102,2026-03-30T14:35:00Z,EMP-102,Dallas West,18.50,3,0,NORMAL`;
     expect(json.incidents.length).toBe(1);
     expect(json.incidents[0].entity).toBe('EMP-409');
     expect(json.incidents[0].impact_value).toBe(142.5);
+    expect(json.incidents[0].clef_explanation).toBeDefined();
+    expect(json.incidents[0].clef_explanation).toContain('Clef flagged transaction TX-101');
   });
 
-  it('exports matched findings to CSV via POST /api/export/csv', async () => {
+  it('exports matched findings to CSV with natural language explanation column via POST /api/export/csv', async () => {
     const incidents = [
       {
         id: 'INC_001',
@@ -141,6 +143,7 @@ TX-102,2026-03-30T14:35:00Z,EMP-102,Dallas West,18.50,3,0,NORMAL`;
         entity: 'CASHIER_17',
         context: 'LANE_01',
         impact_formatted: '$39.99 at risk',
+        clef_explanation: 'Clef detected cashier CASHIER_17 scanning Organic Ribeye Steak and voiding it immediately before yellow bananas.',
         clef_match_pct: '96% Match',
         clef_confidence: 'High',
         summary: 'Matches criteria',
@@ -160,7 +163,8 @@ TX-102,2026-03-30T14:35:00Z,EMP-102,Dallas West,18.50,3,0,NORMAL`;
     expect(res.headers.get('content-type')).toContain('text/csv');
     const csvContent = await res.text();
     expect(csvContent).toContain('Incident ID');
-    expect(csvContent).toContain('CASHIER_17');
+    expect(csvContent).toContain('What Clef Thinks It Found (Natural Language)');
+    expect(csvContent).toContain('Clef detected cashier CASHIER_17 scanning Organic Ribeye Steak');
     expect(csvContent).toContain('LANE_01');
   });
 });

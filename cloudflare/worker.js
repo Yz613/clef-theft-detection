@@ -198,6 +198,7 @@ function formatDiscoveryResult(parsed, userQuery, modelName) {
       timestamp: e.timestamp || "Active / Open",
       impact_value: 4.8,
       impact_formatted: e.impact_formatted || "4.8 ★ Verified",
+      clef_explanation: e.clef_explanation || `Clef identified ${e.title || e.entity} in ${e.context || "the directory"} directly fulfilling "${userQuery}". ${e.summary || ""}`,
       summary: e.summary || "Matches your discovery request.",
       what_to_do: e.what_to_do || "Verified listing details.",
       clef_pattern: e.pattern || "Verified Entity",
@@ -375,6 +376,7 @@ function synthesizeDiscoveryKnowledge(userQuery, modelName) {
         timestamp: s.timestamp,
         impact_value: 4.8,
         impact_formatted: s.impact_formatted,
+        clef_explanation: `Clef identified ${s.title} as an authentic ${s.pattern.toLowerCase()} in ${s.context} (${s.impact_formatted}) meeting your search for "${userQuery}". ${s.summary}`,
         summary: s.summary,
         what_to_do: s.what_to_do,
         clef_pattern: s.pattern,
@@ -434,6 +436,7 @@ function synthesizeGeneralDiscovery(userQuery, modelName) {
       timestamp: "Active Directory Listing",
       impact_value: 4.7,
       impact_formatted: `${e.rate} (Verified)`,
+      clef_explanation: `Clef identified ${e.name} in ${e.city} as an authentic ${e.type.toLowerCase()} directly fulfilling "${userQuery}". ${e.note}`,
       summary: `${e.name} matches your search for "${userQuery}". ${e.note}`,
       what_to_do: `Operational note: ${e.note}`,
       clef_pattern: e.type,
@@ -503,16 +506,18 @@ async function handleExportCsv(request) {
   try {
     const { incidents, query } = await request.json();
     const rows = [
-      ["Incident ID", "Severity", "Title", "Primary Entity", "Context/Channel", "Impact", "Clef Match %", "Confidence", "Summary", "Recommended Next Step"],
+      ["Incident ID", "Severity", "Title", "Primary Entity", "Context/Channel", "What Clef Thinks It Found (Natural Language)", "Impact", "Clef Match %", "Confidence", "Summary", "Recommended Next Step"],
     ];
 
     (incidents || []).forEach((inc) => {
+      const explanation = inc.clef_explanation || inc.summary || "";
       rows.push([
         inc.id,
         inc.severity,
         `"${(inc.title || "").replace(/"/g, '""')}"`,
         `"${(inc.entity || "").replace(/"/g, '""')}"`,
         `"${(inc.context || "").replace(/"/g, '""')}"`,
+        `"${explanation.replace(/"/g, '""')}"`,
         `"${(inc.impact_formatted || "").replace(/"/g, '""')}"`,
         inc.clef_match_pct || "90%",
         inc.clef_confidence || "High",
@@ -636,6 +641,7 @@ async function crunchDataWithClef(rawText, userQuery, modelName, minConfidence, 
         timestamp: candidate.timestamp || "Recent",
         impact_value: Math.round(candidate.numericMetric * 100) / 100,
         impact_formatted: formatImpactValue(candidate.numericMetric, domainInfo),
+        clef_explanation: candidate.clef_explanation || generateClefExplanation(candidate, domainInfo, userQuery, matchNoul),
         summary: candidate.explanation || `Matches criteria: "${userQuery}". ${candidate.details}`,
         what_to_do: candidate.recommendation || generateDomainAction(candidate, domainInfo),
         clef_pattern: candidate.patternName,
@@ -1054,6 +1060,42 @@ function generateDomainAction(candidate, domainInfo) {
   return `Review record ${id} and follow up directly with ${entity}.`;
 }
 
+function generateClefExplanation(candidate, domainInfo, userQuery, matchNoul = 0.95) {
+  const entity = candidate.entity || candidate.primaryEntity || "Entity";
+  const context = candidate.context || candidate.secondaryEntity || "Location";
+  const metric = candidate.numericMetric || 0;
+  const matchPct = Math.round((matchNoul || 0.95) * 100);
+
+  if (candidate.clef_explanation) return candidate.clef_explanation;
+
+  if (domainInfo.type === "RETAIL") {
+    if (candidate.patternName?.includes("Sweethearting")) {
+      return `Clef detected cashier ${entity} scanning high-value items and voiding them immediately at ${context}, matching deliberate sweethearting substitution with ${matchPct}% certainty.`;
+    }
+    if (candidate.patternName?.includes("Post-Void")) {
+      return `Clef identified completed cash sales totaling $${metric.toFixed(2)} post-voided by cashier ${entity} at ${context} with no return slip, indicating probable cash till extraction.`;
+    }
+    if (candidate.patternName?.includes("High Void")) {
+      return `Clef flagged transaction ${candidate.id || candidate.evidenceIds?.[0] || ""} on ${context} where cashier ${entity} entered anomalous void items totaling $${metric.toFixed(2)}, matching "${userQuery}" with ${matchPct}% confidence.`;
+    }
+    return `Clef flagged cashier ${entity} on ${context} for retail exception activity (${formatImpactValue(metric, domainInfo)}) matching loss prevention criteria.`;
+  }
+
+  if (domainInfo.type === "COMMUNICATIONS") {
+    return `Clef detected an urgent inquiry from ${entity} in ${context} that has remained unanswered for ${metric.toFixed(1)} hours, breaching the service SLA threshold with ${matchPct}% match confidence.`;
+  }
+
+  if (domainInfo.type === "DEVOPS") {
+    return `Clef isolated error/latency event on ${context} for ${entity} with metric ${metric}ms directly fulfilling investigation for "${userQuery}".`;
+  }
+
+  if (domainInfo.type === "FINANCE") {
+    return `Clef detected high-risk financial anomaly for account ${entity} in ${context} with $${metric.toFixed(2)} exposure requiring audit.`;
+  }
+
+  return `Clef evaluated record ${candidate.id || entity} as a verified match for "${userQuery}" based on status "${candidate.status || "flagged"}" and exposure of ${formatImpactValue(metric, domainInfo)}.`;
+}
+
 // ============================================================================
 // UNIVERSAL CANDIDATE EXTRACTION (MULTI-DOMAIN)
 // ============================================================================
@@ -1090,6 +1132,7 @@ function extractUniversalCandidates(records, userQuery, domainInfo) {
           patternName: "SLA Response Breach",
           defaultSeverity: severity,
           details: `Inquiry from ${r.primaryEntity} regarding "${r.textContent}" has remained ${r.status} for ${r.numericMetric.toFixed(1)} hours. Priority: ${r.priority}.`,
+          clef_explanation: `Clef identified an unresolved inquiry from ${r.primaryEntity} regarding "${r.textContent}" that has remained ${r.status.toLowerCase()} for ${r.numericMetric.toFixed(1)} hours in ${r.secondaryEntity}, exceeding standard SLA response targets.`,
           recommendation: `Send immediate priority response to ${r.primaryEntity} regarding "${r.textContent}". Target SLA has been exceeded by ${Math.max(0, r.numericMetric - 24).toFixed(1)} hours.`,
           evidenceIds: [r.id],
           evidenceDetails: `Subject: ${r.textContent} | Delay: ${r.numericMetric} hrs | Status: ${r.status}`,
@@ -1189,6 +1232,7 @@ function extractUniversalCandidates(records, userQuery, domainInfo) {
           patternName: "Sweethearting & Substitution",
           defaultSeverity: exp > 200 ? "CRITICAL" : "HIGH",
           details: `Cashier scanned high-value items (${items}) and immediately voided them before generic entries.`,
+          clef_explanation: `Clef detected cashier ${cid} scanning high-value items (${items}) totaling $${exp.toFixed(2)} and voiding them immediately before entering low-cost items, matching sweethearting merchandise bypass on ${cg.lane}.`,
           recommendation: `Inspect overhead CCTV on ${cg.lane} around ${cg.latestTimestamp}.`,
           evidenceIds: cg.substitutionEvents.map((e) => e.txId),
           evidenceDetails: `Items: ${items} | Exposure: $${exp.toFixed(2)}`,
@@ -1208,6 +1252,7 @@ function extractUniversalCandidates(records, userQuery, domainInfo) {
           patternName: "Post-Void Till Skimming",
           defaultSeverity: cg.postVoids.length >= 3 ? "CRITICAL" : "HIGH",
           details: `Completed cash sales post-voided without corresponding customer complaint or refund slip.`,
+          clef_explanation: `Clef identified ${cg.postVoids.length} completed cash transactions totaling $${exp.toFixed(2)} post-voided by cashier ${cid} on ${cg.lane} after customer checkout with no return slip, indicating probable cash till theft.`,
           recommendation: `Perform immediate till count audit and inspect journal for ${cid}.`,
           evidenceIds: cg.postVoids.map((e) => e.txId),
           evidenceDetails: `Post-void count: ${cg.postVoids.length} | Exposure: $${exp.toFixed(2)}`,
@@ -1227,6 +1272,7 @@ function extractUniversalCandidates(records, userQuery, domainInfo) {
             patternName: "High Void / Till Anomaly",
             defaultSeverity: hv.price >= 100 || hv.voidCount >= 3 ? "CRITICAL" : "HIGH",
             details: `Transaction ${hv.txId} flagged with ${hv.voidCount} item void(s) totaling $${hv.price.toFixed(2)}. Status: ${hv.status}.`,
+            clef_explanation: `Clef flagged transaction ${hv.txId} on register ${cg.lane} where cashier ${cid} processed ${hv.voidCount} item void(s) totaling $${hv.price.toFixed(2)} with status "${hv.status}", fitting high-void loss prevention criteria for "${userQuery}".`,
             recommendation: `Audit register receipts for transaction ${hv.txId} and verify supervisor void authorizations.`,
             evidenceIds: [hv.txId],
             evidenceDetails: `Transaction: ${hv.txId} | Amount: $${hv.price.toFixed(2)} | Voids: ${hv.voidCount}`,
@@ -1288,6 +1334,7 @@ function extractUniversalCandidates(records, userQuery, domainInfo) {
         patternName: "Pattern Exception",
         defaultSeverity: sev,
         details: `Record ${r.id} for ${r.primaryEntity} matches query criteria. Status: ${r.status}. Details: ${r.textContent}.`,
+        clef_explanation: `Clef evaluated record ${r.id} (${r.primaryEntity}) as a direct match for "${userQuery}" based on status "${r.status}" and value ${formatImpactValue(r.numericMetric, domainInfo)}.`,
         recommendation: generateDomainAction(r, domainInfo),
         evidenceIds: [r.id],
         evidenceDetails: `Status: ${r.status} | Value: ${r.numericMetric} | Content: ${r.textContent}`,
