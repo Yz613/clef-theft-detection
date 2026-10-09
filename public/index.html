@@ -3,309 +3,318 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Clef: the world's simplest retail theft & exception scanner</title>
-  <meta name="description" content="Type what you want Clef to look for. Check cashiers, scan-and-voids, and till anomalies in seconds, every incident evaluated by Cloudflare Clef.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%229%22%20fill%3D%22%23FF6640%22/%3E%3Cpath%20d%3D%22M18%206L9%2017h6l-2%209%209-11h-6z%22%20fill%3D%22%23fff%22/%3E%3C/svg%3E">
+  <title>Clef — Edge AI Decision & Discovery Engine</title>
+  <meta name="description" content="Ask anything or upload your data. Clef discovers entities, validates criteria, and flags retail exceptions on Cloudflare Workers AI edge.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%228%22%20fill%3D%22%234F46E5%22/%3E%3Cpath%20d%3D%22M8%2011h5v10H8zM19%207h5v18h-5z%22%20fill%3D%22%23fff%22%20opacity%3D%22.85%22/%3E%3Ccircle%20cx%3D%2216%22%20cy%3D%2216%22%20r%3D%222.5%22%20fill%3D%22%2338BDF8%22/%3E%3C/svg%3E">
   <script>document.documentElement.dataset.theme = localStorage.getItem("clef_theme") || "light"</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #FAF8F4;
+      --bg: #F8FAFC;
       --card: #FFFFFF;
-      --ink: #16140F;
-      --muted: #6B665C;
-      --faint: #A39D91;
-      --line: #E8E3D8;
-      --hover: #F4F1EA;
-      --accent: #FF6640;
-      --accent-soft: #FFE9E2;
-      --good: #1F9D55;
-      --good-soft: #E3F5EA;
-      --maybe: #B7791F;
-      --maybe-soft: #FBF0DC;
-      --no: #A0998C;
-      --no-soft: #F1EEE8;
+      --ink: #0F172A;
+      --muted: #64748B;
+      --faint: #94A3B8;
+      --line: #E2E8F0;
+      --hover: #F1F5F9;
+      --accent: #4F46E5;
+      --accent-hover: #4338CA;
+      --accent-soft: #EEF2FF;
+      --good: #059669;
+      --good-soft: #ECFDF5;
+      --maybe: #D97706;
+      --maybe-soft: #FFFBEB;
+      --no: #64748B;
+      --no-soft: #F1F5F9;
+      --radius: 12px;
     }
     :root[data-theme="dark"] {
-      --bg: #111110;
-      --card: #1B1A18;
-      --ink: #F2EFE8;
-      --muted: #9C968A;
-      --faint: #6E685E;
-      --line: #2C2A26;
-      --hover: #23211E;
-      --accent-soft: #3A2119;
-      --good-soft: #15301F;
-      --maybe-soft: #352914;
-      --no-soft: #24221F;
+      --bg: #0B0F19;
+      --card: #131B2E;
+      --ink: #F8FAFC;
+      --muted: #94A3B8;
+      --faint: #64748B;
+      --line: #1E293B;
+      --hover: #1A243D;
+      --accent-soft: #1E1B4B;
+      --good-soft: #064E3B;
+      --maybe-soft: #451A03;
+      --no-soft: #1E293B;
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --bg: #111110;
-        --card: #1B1A18;
-        --ink: #F2EFE8;
-        --muted: #9C968A;
-        --faint: #6E685E;
-        --line: #2C2A26;
-        --hover: #23211E;
-        --accent-soft: #3A2119;
-        --good-soft: #15301F;
-        --maybe-soft: #352914;
-        --no-soft: #24221F;
+        --bg: #0B0F19;
+        --card: #131B2E;
+        --ink: #F8FAFC;
+        --muted: #94A3B8;
+        --faint: #64748B;
+        --line: #1E293B;
+        --hover: #1A243D;
+        --accent-soft: #1E1B4B;
+        --good-soft: #064E3B;
+        --maybe-soft: #451A03;
+        --no-soft: #1E293B;
       }
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 Inter, system-ui, sans-serif; }
-    .wrap { max-width: 1180px; margin: 0 auto; padding: 18px 16px 80px; }
-    
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Inter, system-ui, -apple-system, sans-serif; transition: background .2s ease; }
+    .wrap { max-width: 1140px; margin: 0 auto; padding: 20px 18px 80px; }
+
     /* HEADER */
-    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
-    .brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; color: var(--ink); text-decoration: none; cursor: pointer; }
-    .brand .mark { width: 28px; height: 28px; flex: none; transition: transform .25s ease; }
-    .brand:hover .mark { transform: rotate(-8deg) scale(1.08); }
-    .brand .word { font-size: 19px; font-weight: 750; letter-spacing: -.035em; }
-    .brand .by { font-weight: 500; font-size: 11.5px; color: var(--faint); letter-spacing: 0; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
-    .brand .by b { font-weight: 650; color: var(--accent); }
-    .hright { display: flex; gap: 8px; align-items: center; flex: none; }
-    .pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; font: 500 12.5px "JetBrains Mono", monospace; color: var(--muted); background: transparent; }
-    .pill.clickable { cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
-    .pill.clickable:hover { color: var(--ink); border-color: var(--faint); background: var(--hover); }
-    .themebtn { cursor: pointer; font: 500 12.5px Inter, system-ui, sans-serif; }
-    .mono { font: 500 12.5px "JetBrains Mono", monospace; white-space: nowrap; }
-    .muted { color: var(--muted); }
-    .hidden { display: none !important; }
-    a { color: var(--ink); text-decoration-color: var(--line); text-underline-offset: 3px; }
-    .link { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--muted); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; cursor: pointer; }
-    .link:hover { color: var(--ink); text-decoration-color: var(--ink); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; color: var(--ink); text-decoration: none; cursor: pointer; }
+    .brand-mark { width: 30px; height: 30px; flex: none; border-radius: 8px; background: linear-gradient(135deg, #4F46E5, #38BDF8); display: grid; place-items: center; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3); transition: transform .2s ease; }
+    .brand:hover .brand-mark { transform: scale(1.06) rotate(-4deg); }
+    .brand-mark svg { width: 18px; height: 18px; fill: #fff; }
+    .brand-word { font-size: 19px; font-weight: 750; letter-spacing: -.03em; }
+    .brand-tag { font-weight: 500; font-size: 11.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; letter-spacing: 0; background: var(--card); }
+    .brand-tag b { font-weight: 650; color: var(--accent); }
     
-    .btn { background: var(--ink); color: var(--card); border: 0; border-radius: 10px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-block; transition: transform .12s, box-shadow .12s, background .12s, opacity .12s; }
-    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px -6px rgba(0,0,0,.35); }
+    .hright { display: flex; gap: 8px; align-items: center; flex: none; }
+    .pill { border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font: 500 12px "JetBrains Mono", monospace; color: var(--muted); background: var(--card); transition: all .15s ease; }
+    .pill.clickable { cursor: pointer; }
+    .pill.clickable:hover { color: var(--ink); border-color: var(--faint); background: var(--hover); }
+    .pill.active-data { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    
+    .btn { background: var(--ink); color: var(--card); border: 0; border-radius: 10px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: transform .12s, box-shadow .12s, background .12s; }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 14px -6px rgba(15, 23, 42, 0.4); }
     .btn:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
-    .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+    .btn.primary { background: var(--accent); color: #fff; }
+    .btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
     .btn.ghost:hover { background: var(--hover); border-color: var(--faint); }
-    .btn.sm { padding: 6px 12px; font-size: 13.5px; border-radius: 8px; }
-    .btn.stop { background: var(--accent); color: #fff; }
+    .btn.sm { padding: 6px 12px; font-size: 13px; border-radius: 8px; }
+    .btn.stop { background: #DC2626; color: #fff; }
+
+    .link { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--muted); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; cursor: pointer; }
+    .link:hover { color: var(--ink); }
+    .mono { font: 500 12.5px "JetBrains Mono", monospace; white-space: nowrap; }
+    .hidden { display: none !important; }
 
     /* HERO */
-    .hero { max-width: 720px; margin: 11vh auto 0; transition: margin .25s ease; }
+    .hero { max-width: 740px; margin: 10vh auto 0; transition: margin .25s ease; }
     body.ran .hero { margin: 14px 0 0; max-width: 100%; }
-    h1 { font-size: 31px; line-height: 1.15; letter-spacing: -.02em; margin: 0 0 16px; font-weight: 650; }
-    body.ran h1 { display: none; }
     .back { display: none; margin: 0 0 10px 2px; }
     body.ran .back { display: inline-block; }
-    .lede { margin: -6px 0 18px; font-size: 15.5px; line-height: 1.5; color: var(--muted); max-width: 600px; }
+    h1 { font-size: 32px; line-height: 1.15; letter-spacing: -.025em; margin: 0 0 14px; font-weight: 700; }
+    body.ran h1 { display: none; }
+    .lede { margin: 0 0 20px; font-size: 15.5px; line-height: 1.5; color: var(--muted); max-width: 620px; }
     body.ran .lede { display: none; }
 
-    /* MODE SELECTOR (LANES) */
-    .lane { display: inline-flex; gap: 2px; margin: 0 4px 10px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
-    .lane button { border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 500; color: var(--muted); padding: 5px 12px; border-radius: 999px; cursor: pointer; transition: color .15s, background .15s; }
+    /* LANES (INTENT SELECTOR) */
+    .lane { display: inline-flex; gap: 3px; margin: 0 2px 12px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+    .lane button { border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 500; color: var(--muted); padding: 5px 13px; border-radius: 999px; cursor: pointer; transition: all .15s ease; }
     .lane button:hover { color: var(--ink); }
-    .lane button.on { background: var(--ink); color: #fff; }
+    .lane button.on { background: var(--ink); color: var(--card); font-weight: 600; }
     body.ran .lane { margin-bottom: 8px; }
 
-    /* SEARCH FORM */
-    .search { display: flex; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 6px; box-shadow: 0 8px 24px -14px rgba(0,0,0,.18); }
-    .search:focus-within { border-color: var(--ink); }
-    .search input { flex: 1; border: 0; background: transparent; font: inherit; font-size: 18px; padding: 10px 12px; color: var(--ink); min-width: 0; }
-    .search input:focus { outline: none; }
-    .search input::placeholder { color: var(--faint); }
-    
-    .proof { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 12px 4px 0; font-size: 13px; color: var(--muted); }
-    .proof span::before { content: "✓"; color: var(--good); font-weight: 700; margin-right: 5px; }
-    body.ran .proof { display: none; }
-    
-    .plan { min-height: 22px; margin: 10px 4px 0; font-size: 13.5px; color: var(--muted); }
-    .plan b { color: var(--ink); font-weight: 600; }
+    /* UNIFIED SEARCH & UPLOAD CONTAINER */
+    .search-box-wrap {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 6px;
+      box-shadow: 0 10px 30px -15px rgba(15, 23, 42, 0.12);
+      transition: border-color .15s ease, box-shadow .15s ease;
+      position: relative;
+    }
+    .search-box-wrap:focus-within { border-color: var(--accent); box-shadow: 0 10px 30px -12px rgba(79, 70, 229, 0.25); }
+    .search-box-wrap.dragover { border-color: var(--accent); background: var(--accent-soft); }
 
-    /* SAMPLE PREVIEW BOX */
-    .sample { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; margin: 22px 0 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.03); transition: border-color .15s, box-shadow .15s; }
-    .sample:hover { border-color: var(--faint); box-shadow: 0 6px 22px rgba(0,0,0,.06); }
-    .shead { display: flex; justify-content: space-between; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--muted); background: var(--bg); }
-    .shead b { color: var(--ink); font-weight: 600; white-space: nowrap; }
-    .srow { display: grid; grid-template-columns: 1.3fr 1.8fr 1fr auto; gap: 12px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
-    .srow:first-of-type { border-top: 0; }
-    .srow b { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .srow .sem { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
-    .srow .sok { font-size: 12px; color: var(--good); white-space: nowrap; }
-    .sfootline { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--accent); }
-    body.ran .sample { display: none; }
+    /* ATTACHED FILE BANNER */
+    .attached-file-row {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--hover);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 6px 12px;
+      margin-bottom: 6px;
+      font-size: 12.5px;
+    }
+    .attached-file-row.has-file { display: flex; }
+    .file-chip { display: flex; align-items: center; gap: 6px; font-weight: 500; color: var(--ink); }
+    .file-chip b { color: var(--accent); }
+    .file-remove-btn { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+    .file-remove-btn:hover { color: #DC2626; background: rgba(220, 38, 38, 0.1); }
+
+    /* SEARCH INNER FORM */
+    .search-form { display: flex; align-items: center; gap: 8px; }
+    .upload-btn-chip {
+      background: var(--hover);
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all .15s ease;
+      flex: none;
+    }
+    .upload-btn-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    .search-input {
+      flex: 1;
+      border: 0;
+      background: transparent;
+      font: inherit;
+      font-size: 17px;
+      padding: 9px 8px;
+      color: var(--ink);
+      min-width: 0;
+      outline: none;
+    }
+    .search-input::placeholder { color: var(--faint); }
+    .search-submit-btn { padding: 11px 20px; font-size: 14px; }
+
+    /* PASTE ACCORDION */
+    .paste-toggle-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 4px 0; font-size: 12.5px; color: var(--muted); }
+    .paste-drawer { display: none; margin-top: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+    .paste-drawer.open { display: block; }
+    .paste-textarea { width: 100%; height: 130px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: 500 12px "JetBrains Mono", monospace; color: var(--ink); resize: vertical; outline: none; }
+    .paste-textarea:focus { border-color: var(--accent); }
+    .paste-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: var(--faint); }
+
+    .plan-line { min-height: 20px; margin: 10px 4px 0; font-size: 13px; color: var(--muted); }
+    .plan-line b { color: var(--ink); font-weight: 600; }
+
+    /* SAMPLE DEMO CARD */
+    .demo-preview { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; margin: 24px 0 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,.02); transition: all .15s ease; }
+    .demo-preview:hover { border-color: var(--accent); box-shadow: 0 6px 20px rgba(79, 70, 229, 0.08); }
+    .demo-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--muted); background: var(--hover); }
+    .demo-head b { color: var(--ink); font-weight: 600; }
+    .demo-row { display: grid; grid-template-columns: 1.4fr 1.8fr 1fr auto; gap: 12px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; }
+    .demo-row:first-of-type { border-top: 0; }
+    .demo-row b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .demo-row .desc { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .demo-row .tag-ok { font-size: 12px; color: var(--good); font-weight: 600; white-space: nowrap; }
+    .demo-foot { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--accent); background: var(--card); }
+    body.ran .demo-preview { display: none; }
 
     /* TRY SUGGESTIONS */
-    .try { margin: 28px 4px 0; }
-    .tryh { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
-    .ex { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
-    .ex .tryh { margin: 0; }
-    .exb { text-decoration: none; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; transition: border-color .12s, background .12s; }
-    .exb:hover { border-color: var(--accent); background: var(--hover); }
-    body.ran .try { display: none; }
+    .try-section { margin: 28px 2px 0; }
+    .try-title { font-size: 12.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); margin-bottom: 8px; }
+    .try-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+    .chip { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; transition: all .12s ease; text-decoration: none; }
+    .chip:hover { border-color: var(--accent); background: var(--hover); color: var(--accent); }
+    body.ran .try-section { display: none; }
 
-    /* RECENT SEARCHES */
-    .recent { margin: 28px 4px 0; }
-    .rrow { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
-    .ropen { flex: 1; display: flex; justify-content: space-between; gap: 12px; background: none; border: 0; padding: 9px 2px; font: inherit; color: var(--ink); cursor: pointer; text-align: left; min-width: 0; }
-    .ropen:hover b { text-decoration: underline; text-underline-offset: 3px; }
-    .ropen b { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ropen span { font: 500 12px "JetBrains Mono", monospace; color: var(--faint); white-space: nowrap; }
-    .rdel { background: none; border: 0; color: var(--faint); cursor: pointer; font-size: 16px; padding: 4px 6px; opacity: 0; }
-    .rrow:hover .rdel, .rdel:focus { opacity: 1; }
-    .rdel:hover { color: var(--ink); }
-    body.ran .recent { display: none; }
-
-    .sfoot { margin: 34px 4px 24px; font-size: 12.5px; color: var(--faint); }
-    body.ran .sfoot { display: none; }
+    /* RECENT RUNS */
+    .recent-box { margin: 26px 2px 0; }
+    .rrow { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+    .ropen { flex: 1; display: flex; justify-content: space-between; gap: 12px; background: none; border: 0; padding: 9px 2px; font: inherit; color: var(--ink); cursor: pointer; text-align: left; }
+    .ropen:hover b { color: var(--accent); }
+    .ropen b { font-weight: 500; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ropen span { font: 500 12px "JetBrains Mono", monospace; color: var(--faint); }
+    .rdel { background: none; border: 0; color: var(--faint); cursor: pointer; font-size: 16px; padding: 4px; border-radius: 4px; }
+    .rdel:hover { color: #DC2626; }
+    body.ran .recent-box { display: none; }
 
     /* RESULTS VIEW */
-    .results { display: grid; grid-template-columns: 240px 1fr; gap: 24px; margin-top: 22px; align-items: start; }
+    .results { display: grid; grid-template-columns: 240px 1fr; gap: 24px; margin-top: 20px; align-items: start; }
     
-    /* LIVE STATS HEADER */
-    .live { grid-column: 1/-1; margin: 0 0 18px; padding: 20px 22px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
-    .lvKick { font: 600 10.5px/1 "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
-    .lvHead h2 { margin: 8px 0 16px; font-size: 26px; line-height: 1.15; letter-spacing: -.02em; font-weight: 650; }
-    .lvStats { display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; gap: 10px; }
-    .lvStat { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px 14px; min-width: 0; overflow: hidden; }
-    .lvStat label { display: block; font: 600 9.5px/1 "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 9px; }
-    .lvStat b { display: block; font: 600 28px/1 Inter, system-ui, sans-serif; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .lvStat small { display: block; margin-top: 6px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .lvStat i { position: absolute; left: 14px; right: 14px; bottom: 8px; height: 3px; border-radius: 2px; background: var(--line); }
-    .lvStat em { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--accent); transition: width .3s ease-out; }
-    .lvStat.dark { background: #16140F; border-color: #16140F; color: #fff; }
-    .lvStat.dark label { color: #8D877B; }
-    .lvStat.dark small { color: #B5AE9F; }
-    .lvStat.dark i { background: #3A362E; }
-    .lvStat.risk { background: var(--accent-soft); border-color: #FFD3C4; }
-    .lvStat.risk b { color: #16140F; }
+    /* LIVE STATS TICKER */
+    .live-card { grid-column: 1/-1; margin-bottom: 16px; padding: 18px 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+    .live-kick { font: 600 11px/1 "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: 6px; }
+    .live-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.8; } }
+    .live-title { margin: 8px 0 16px; font-size: 24px; line-height: 1.2; letter-spacing: -.02em; font-weight: 700; }
+    
+    .live-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .stat-tile { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--bg); overflow: hidden; }
+    .stat-tile label { display: block; font: 600 10px/1 "JetBrains Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; }
+    .stat-tile b { display: block; font: 700 26px/1 Inter, sans-serif; letter-spacing: -.02em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .stat-tile small { display: block; margin-top: 5px; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stat-tile.primary-stat { background: var(--card); border-color: var(--accent); }
+    .stat-tile.primary-stat b { color: var(--accent); }
 
     /* SIDEBAR FILTERS */
-    .side { position: sticky; top: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; max-height: calc(100vh - 24px); overflow: auto; }
-    .sidehead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
-    .sidehead b { font-size: 14px; }
-    .fnote { font-size: 12px; color: var(--faint); margin-bottom: 6px; }
+    .side { position: sticky; top: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; max-height: calc(100vh - 24px); overflow: auto; }
+    .side-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+    .side-head b { font-size: 14px; font-weight: 700; }
+    .fnote { font-size: 12px; color: var(--faint); margin-bottom: 8px; }
     .group { padding: 10px 0; border-top: 1px solid var(--line); }
     .group:first-child { border-top: 0; }
-    .gtitle { font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
-    .opt { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; border-radius: 7px; padding: 4px 8px; font: inherit; font-size: 13.5px; color: var(--ink); cursor: pointer; text-align: left; transition: background .12s; }
+    .gtitle { font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .opt { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; border-radius: 7px; padding: 5px 8px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; text-align: left; transition: background .12s; }
     .opt:hover { background: var(--hover); }
-    .opt.on { background: var(--ink); color: var(--card); }
-    .opt .n { font: 500 11.5px "JetBrains Mono", monospace; color: var(--faint); }
-    .opt.on .n { color: var(--card); opacity: .7; }
-    .opt.zero { opacity: .4; }
+    .opt.on { background: var(--ink); color: var(--card); font-weight: 600; }
+    .opt .n { font: 500 11px "JetBrains Mono", monospace; color: var(--faint); }
+    .opt.on .n { color: var(--card); opacity: .8; }
     .opt .lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px; }
-    .filtersBtn, .sideDone { display: none; }
 
-    /* MAIN RESULTS CONTENT */
+    /* MAIN RESULTS AREA */
     .main { min-width: 0; }
-    .bar1 { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
-    .count { font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
-    .count span { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 6px; }
-    .meta { font-size: 12.5px; color: var(--muted); margin: 3px 0 10px; }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .main-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .count-text { font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+    .count-text span { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+    .main-meta { font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+    .actions-row { display: flex; gap: 8px; flex-wrap: wrap; }
     
-    .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-    .tab { border: 0; background: transparent; color: var(--muted); border-radius: 8px; padding: 5px 10px; cursor: pointer; font: inherit; font-size: 13.5px; transition: color .12s, background .12s; }
-    .tab:hover { color: var(--ink); }
-    .tab.on { background: var(--card); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); font-weight: 600; }
-    .tab span { font: 500 12px "JetBrains Mono", monospace; color: var(--faint); margin-left: 4px; }
-    
-    .prog { height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
-    .prog i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s ease; }
-    
-    .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
-    .row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 2.2fr) minmax(0, 1.6fr) minmax(0, 1.2fr); gap: 14px; padding: 12px 14px; border-top: 1px solid var(--line); font-size: 13.5px; align-items: start; transition: background .12s; }
-    .row:first-child { border-top: 0; border-radius: 12px 12px 0 0; }
-    .row:last-child { border-radius: 0 0 12px 12px; }
-    .row.head { font-size: 12px; color: var(--faint); padding: 9px 14px; background: var(--bg); font-weight: 500; }
+    .tabs-row { display: flex; gap: 4px; margin-bottom: 10px; }
+    .tab-btn { border: 0; background: transparent; color: var(--muted); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13.5px; transition: all .12s ease; }
+    .tab-btn:hover { color: var(--ink); }
+    .tab-btn.on { background: var(--card); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); font-weight: 600; }
+    .tab-btn span { font: 500 11.5px "JetBrains Mono", monospace; color: var(--faint); margin-left: 5px; }
+
+    .prog-line { height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 12px; }
+    .prog-line i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s ease; }
+
+    /* CARD LIST */
+    .findings-list { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+    .row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 2.2fr) minmax(0, 1.6fr) minmax(0, 1.1fr); gap: 14px; padding: 14px 16px; border-top: 1px solid var(--line); font-size: 13.5px; align-items: start; transition: background .12s; }
+    .row:first-child { border-top: 0; border-radius: 14px 14px 0 0; }
+    .row:last-child { border-radius: 0 0 14px 14px; }
+    .row.head { font-size: 11.5px; color: var(--faint); padding: 10px 16px; background: var(--hover); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
     .row:not(.head):hover { background: var(--hover); }
-    
-    .who b { display: block; font-weight: 600; font-size: 14px; }
-    .who span { color: var(--muted); font-size: 12.5px; }
-    .risk-amt { font: 600 14px "JetBrains Mono", monospace; color: var(--ink); }
-    .risk-amt.hi { color: var(--accent); }
-    .risk-amt small { display: block; font-family: Inter, sans-serif; font-size: 11.5px; font-weight: 400; color: var(--faint); margin-top: 1px; }
-    .evidence { color: var(--ink); font-size: 13px; line-height: 1.4; }
-    .evidence small { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
-    .action-cell { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
-    .action-cell b { display: block; color: var(--ink); font-weight: 600; font-size: 12px; margin-bottom: 2px; }
-    
-    .tag { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 6px; padding: 2px 7px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
-    .tag.hot { background: var(--good-soft); color: var(--good); }
-    .tag.maybe { background: var(--maybe-soft); color: var(--maybe); }
-    .tag.no { background: var(--no-soft); color: var(--no); }
-    .tag.wait { background: var(--bg); color: var(--faint); }
-    .chk { font-size: 12px; color: var(--muted); }
-    .chk.y::before { content: "✓ "; color: var(--good); font-weight: 700; }
-    .chk.n::before { content: "✗ "; color: var(--no); }
-    .lbl { display: none; }
-    .empty { padding: 42px 20px; text-align: center; color: var(--muted); }
-    
-    /* SYSTEM ONE CLEF INSPECTOR */
-    .insp-btn { background: none; border: 0; padding: 0; font: 500 11.5px Inter, sans-serif; color: var(--muted); text-decoration: underline; text-decoration-color: var(--line); cursor: pointer; margin-top: 4px; display: inline-block; }
-    .insp-btn:hover { color: var(--accent); text-decoration-color: var(--accent); }
-    .insp-box { display: none; margin-top: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; font: 500 11.5px "JetBrains Mono", monospace; color: var(--muted); max-height: 200px; overflow: auto; white-space: pre-wrap; }
-    .insp-box.open { display: block; }
 
-    /* TOOLTIP */
-    [data-tip] { position: relative; }
-    @media (hover:none) { [data-tip]:hover::after, [data-tip]:focus-visible::after { display: none !important; } }
-    [data-tip]:hover::after, [data-tip]:focus-visible::after {
-      content: attr(data-tip); position: absolute; z-index: 20; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
-      width: max-content; max-width: 260px; white-space: normal; text-align: left; background: var(--ink); color: var(--card); font: 500 12.5px/1.45 Inter, system-ui, sans-serif;
-      letter-spacing: 0; padding: 8px 10px; border-radius: 8px; box-shadow: 0 8px 24px -8px rgba(0,0,0,.35); pointer-events: none; animation: tip .12s .2s both;
-    }
-    [data-tip].tip-down:hover::after { bottom: auto; top: calc(100% + 8px); }
-    [data-tip].tip-left:hover::after { left: auto; right: 0; transform: none; }
-    [data-tip].tip-right:hover::after { left: 0; transform: none; }
-    @keyframes tip { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+    .cell-entity b { display: block; font-weight: 600; font-size: 14.5px; }
+    .cell-entity span { color: var(--muted); font-size: 12.5px; }
+    .cell-metric { font: 600 14px "JetBrains Mono", monospace; color: var(--ink); }
+    .cell-metric.impactful { color: var(--accent); }
+    .cell-metric small { display: block; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500; color: var(--faint); margin-top: 2px; }
+    .cell-details { color: var(--ink); font-size: 13px; line-height: 1.4; }
+    .cell-details small { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .cell-action { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+    .cell-action b { display: block; color: var(--ink); font-weight: 600; font-size: 12px; margin-bottom: 2px; }
 
-    /* DRAWER (CUSTOM DATA & UPLOAD) */
-    .drawerBg { position: fixed; inset: 0; background: rgba(10,8,5,.38); z-index: 39; animation: fade .2s; }
-    .drawer { position: fixed; top: 0; right: 0; height: 100%; width: min(480px, 100%); background: var(--card); border-left: 1px solid var(--line); z-index: 40; overflow: auto; padding: 24px; transform: translateX(102%); transition: transform .28s cubic-bezier(.2,.8,.2,1); box-shadow: -20px 0 50px -30px rgba(0,0,0,.4); }
-    .drawer.open { transform: none; }
-    .dhead { display: flex; justify-content: space-between; align-items: center; font-size: 17px; }
-    .dsub { color: var(--muted); font-size: 13.5px; margin: 6px 0 16px; }
-    .dsection { margin-bottom: 20px; }
-    .dtitle { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
-    .preset-chips { display: flex; flex-direction: column; gap: 6px; }
-    .pchip { display: flex; justify-content: space-between; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; text-align: left; transition: border-color .15s, background .15s; }
-    .pchip:hover { border-color: var(--accent); background: var(--hover); }
-    .pchip b { font-weight: 600; }
-    .pchip span { font-size: 11.5px; color: var(--muted); }
+    .badge-tag { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .03em; }
+    .badge-tag.match { background: var(--good-soft); color: var(--good); }
+    .badge-tag.unsure { background: var(--maybe-soft); color: var(--maybe); }
+    .badge-tag.cleared { background: var(--no-soft); color: var(--no); }
     
-    .droparea { border: 1.5px dashed var(--line); border-radius: 10px; padding: 18px 14px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; background: var(--bg); }
-    .droparea:hover, .droparea.dragover { border-color: var(--ink); background: var(--hover); }
-    .droparea b { display: block; font-size: 13.5px; margin-bottom: 2px; }
-    .droparea span { font-size: 12px; color: var(--muted); }
+    .clef-check { font-size: 12px; color: var(--muted); }
+    .clef-check::before { content: "✓ "; color: var(--good); font-weight: 700; }
+    .clef-insp-link { background: none; border: 0; padding: 0; font: 500 11.5px Inter, sans-serif; color: var(--muted); text-decoration: underline; text-decoration-color: var(--line); cursor: pointer; margin-top: 4px; display: inline-block; }
+    .clef-insp-link:hover { color: var(--accent); text-decoration-color: var(--accent); }
+    .clef-insp-box { display: none; margin-top: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 500 11px "JetBrains Mono", monospace; color: var(--muted); max-height: 180px; overflow: auto; white-space: pre-wrap; }
+    .clef-insp-box.open { display: block; }
     
-    .pastebox { width: 100%; height: 150px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 10px; font: 500 12px "JetBrains Mono", monospace; color: var(--ink); resize: vertical; outline: none; }
-    .pastebox:focus { border-color: var(--ink); }
-    .dfootline { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--faint); margin-top: 4px; }
-    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    .empty-box { padding: 48px 20px; text-align: center; color: var(--muted); }
 
     /* TOAST */
-    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--card); padding: 9px 16px; border-radius: 10px; font-size: 14px; font-weight: 500; opacity: 0; transition: opacity .2s ease; pointer-events: none; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--card); padding: 9px 18px; border-radius: 10px; font-size: 13.5px; font-weight: 600; opacity: 0; transition: opacity .2s ease; pointer-events: none; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,.25); }
     .toast.show { opacity: 1; }
 
     /* RESPONSIVE */
     @media (max-width: 860px) {
-      .hero { margin-top: 6vh; }
-      h1 { font-size: 25px; }
-      .search input { font-size: 16px; }
-      .results { grid-template-columns: 1fr; gap: 12px; }
-      .side { position: static; max-height: none; display: none; overflow: visible; }
+      .hero { margin-top: 5vh; }
+      h1 { font-size: 26px; }
+      .results { grid-template-columns: 1fr; }
+      .side { display: none; }
       .side.open { display: block; }
-      .sideDone { display: block; width: 100%; position: sticky; bottom: 12px; margin-top: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.18); }
-      .filtersBtn { display: inline-block; }
+      .live-stats { grid-template-columns: 1fr 1fr; }
       .row.head { display: none; }
-      .row { grid-template-columns: 1fr auto; gap: 8px 12px; padding: 14px 16px; }
-      .row .evidence, .row .action-cell, .row .clefcell { grid-column: 1/-1; }
-      .lbl { display: inline; color: var(--faint); font-size: 12px; margin-right: 4px; }
-      .lvStats { grid-template-columns: 1fr 1fr; }
-    }
-    @media (max-width: 480px) {
-      .brand .by { display: none; }
-      .hright { gap: 6px; }
-      .actions { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+      .row { grid-template-columns: 1fr auto; gap: 8px 12px; }
+      .cell-details, .cell-action, .cell-verdict { grid-column: 1/-1; }
     }
   </style>
 </head>
@@ -313,228 +322,187 @@
 <div class="wrap">
   <header>
     <a class="brand" id="brandHome" href="#home">
-      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="9" fill="#FF6640"/>
-        <path d="M18 6L9 17h6l-2 9 9-11h-6z" fill="#fff"/>
-      </svg>
-      <span class="word">Clef</span>
-      <span class="by">powered by <b>Workers AI</b></span>
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      </div>
+      <span class="brand-word">Clef</span>
+      <span class="brand-tag">powered by <b>Workers AI</b></span>
     </a>
     <div class="hright">
-      <button class="pill clickable tip-down tip-left" id="datasetPill" type="button" data-tip="Active dataset loaded. Click to switch or upload custom records.">248 records · Sweethearting</button>
-      <button class="pill clickable tip-down tip-left" id="modelPill" type="button" data-tip="Click to toggle between Clef Flash (9B) and Clef (27B)">Clef Flash 9B</button>
-      <button class="btn sm ghost" id="openDrawerBtn" type="button">Custom Data</button>
-      <button class="pill clickable themebtn tip-down tip-left" id="themeBtn" type="button" data-tip="Toggle Light and Dark Mode">Theme</button>
+      <span class="pill" id="modePill">Mode: Open Discovery</span>
+      <button class="pill clickable" id="modelToggleBtn" title="Toggle Model">Clef Flash 9B</button>
+      <button class="pill clickable" id="themeBtn" title="Toggle Theme">◐ Theme</button>
     </div>
   </header>
 
-  <!-- HERO STATE -->
+  <!-- HERO SECTION -->
   <div class="hero">
-    <button class="link back" id="back" type="button">← All investigations</button>
-    <h1>The world's simplest retail theft & exception scanner.</h1>
-    <p class="lede">Type what you want Clef to look for. Check cashiers, voids, and till anomalies in seconds, every incident evaluated by Cloudflare Clef.</p>
-    
-    <div class="lane" id="lane" role="tablist" aria-label="Investigation Preset Mode">
-      <button type="button" role="tab" class="on" data-lane="sweethearting">Sweethearting & voids</button>
-      <button type="button" role="tab" data-lane="post_void">Cash till skimming</button>
-      <button type="button" role="tab" data-lane="refunds">Refunds & overrides</button>
-      <button type="button" role="tab" data-lane="universal">Universal / Custom</button>
+    <button class="link back" id="backBtn" type="button">← Back to search</button>
+    <h1>The universal decision engine for data & discovery.</h1>
+    <p class="lede">Ask anything or upload your data. Clef discovers entities, validates criteria, and flags retail exceptions on Cloudflare Workers AI edge.</p>
+
+    <!-- INTENT MODES -->
+    <div class="lane" id="laneSelector" role="tablist">
+      <button type="button" class="on" data-lane="discovery">🌐 Open Discovery</button>
+      <button type="button" data-lane="sweethearting">🥩 Retail Theft & Voids</button>
+      <button type="button" data-lane="post_void">💵 Cash Till Skimming</button>
+      <button type="button" data-lane="upload">📁 Uploaded Data</button>
     </div>
 
-    <form class="search" id="form" autocomplete="off">
-      <input id="line" placeholder="cashiers scanning ribeye steak, voiding it, and entering bananas" aria-label="What should Clef look for">
-      <button class="btn" id="go" type="submit">Scan with Clef</button>
-    </form>
+    <!-- MAIN SEARCH & UPLOAD CONTAINER -->
+    <div class="search-box-wrap" id="searchBoxWrap">
+      <!-- ATTACHED FILE ROW -->
+      <div class="attached-file-row" id="attachedFileRow">
+        <div class="file-chip">
+          <span>📄</span>
+          <span id="attachedFileName">data.csv</span>
+          <b id="attachedFileSize">(12 KB)</b>
+        </div>
+        <button type="button" class="file-remove-btn" id="removeFileBtn" title="Remove attached file">✕</button>
+      </div>
 
-    <div class="proof" id="proof">
-      <span>Edge AI multimodal decision model</span>
-      <span>No rule engine or complex syntax</span>
-      <span>Natural language criteria</span>
+      <!-- MAIN INPUT FORM -->
+      <form class="search-form" id="searchForm" autocomplete="off">
+        <button type="button" class="upload-btn-chip" id="uploadChipBtn" title="Click to upload CSV, JSON, or text data">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          <span id="uploadChipLabel">Attach data</span>
+        </button>
+        <input type="file" id="hiddenFileInput" accept=".csv,.tsv,.json,.txt,.log" style="display: none;">
+
+        <input id="queryInput" class="search-input" placeholder="find me random supermarkets in Texas" aria-label="Search prompt or query">
+        <button class="btn primary search-submit-btn" id="submitBtn" type="submit">Scan with Clef</button>
+      </form>
     </div>
 
-    <div class="plan" id="plan">
-      Evaluates against <b>248 transaction records</b> · Clef Flash 9B · Instant edge decision
+    <!-- PASTE TEXT ACCORDION -->
+    <div class="paste-toggle-row">
+      <span class="plan-line" id="planLine">Open discovery query · Clef Flash 9B · Instant edge decision</span>
+      <button type="button" class="link" id="togglePasteBtn">or paste raw data</button>
     </div>
 
-    <!-- SAMPLE PREVIEW CARD -->
-    <button class="sample" id="sample" type="button" aria-label="Run example search: sweethearting steak voided then banana PLU">
-      <div class="shead">
-        <span>sweethearting: ribeye steak voided then banana PLU</span>
-        <b>3 matches · $124.50 at risk</b>
+    <div class="paste-drawer" id="pasteDrawer">
+      <textarea class="paste-textarea" id="pasteArea" placeholder="Paste raw CSV rows or JSON data here...&#10;tx_id,store_id,register_id,cashier_id,timestamp,event_type,item_desc,total_price&#10;TX_01,STORE_101,LANE_01,CASHIER_17,2026-09-15 08:00:00,ITEM_SCAN,Filet Mignon,39.99"></textarea>
+      <div class="paste-footer">
+        <span id="pasteCounter">0 lines</span>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="link" id="clearPasteBtn">Clear</button>
+          <button type="button" class="btn sm primary" id="applyPasteBtn">Use Pasted Data</button>
+        </div>
       </div>
-      <div class="srow">
-        <b>Cashier 17 · Lane 01</b>
-        <span class="sem">Prime Filet Mignon ($39.99) voided → Bananas ($0.59)</span>
-        <span class="mono">$39.99 at risk</span>
-        <span class="sok">✓ Clef match (96%)</span>
+    </div>
+
+    <!-- DEMO PREVIEW CARD -->
+    <button class="demo-preview" id="demoCard" type="button" aria-label="Run sample search: Texas Supermarkets">
+      <div class="demo-head">
+        <span id="demoHeadTitle">Texas Supermarkets & Grocery Retail</span>
+        <b id="demoHeadBadge">10 verified locations</b>
       </div>
-      <div class="srow">
-        <b>Cashier 18 · Lane 08</b>
-        <span class="sem">Organic Filet Mignon ($39.99) voided → Bananas ($0.59)</span>
-        <span class="mono">$39.99 at risk</span>
-        <span class="sok">✓ Clef match (92%)</span>
+      <div class="demo-row">
+        <b>H-E-B Plus! — Austin</b>
+        <span class="desc">True Texas BBQ, bakery, 18 lanes & 8 FAST-Lane self-checkouts</span>
+        <span class="mono">4.7 ★ (3.1k)</span>
+        <span class="tag-ok">✓ 99% Match</span>
       </div>
-      <div class="srow">
-        <b>Cashier 17 · Lane 01</b>
-        <span class="sem">Fresh Atlantic Salmon ($24.99) voided → Onions ($0.69)</span>
-        <span class="mono">$24.99 at risk</span>
-        <span class="sok">✓ Clef match (89%)</span>
+      <div class="demo-row">
+        <b>Central Market — Austin</b>
+        <span class="desc">European food hall, international cheese, scratch cafe</span>
+        <span class="mono">4.8 ★ (2.8k)</span>
+        <span class="tag-ok">✓ 98% Match</span>
       </div>
-      <div class="sfootline">Run this sample scan →</div>
+      <div class="demo-row">
+        <b>Fiesta Mart — Houston</b>
+        <span class="desc">Hispanic grocery hypermarket, carniceria, panaderia</span>
+        <span class="mono">4.3 ★ (1.6k)</span>
+        <span class="tag-ok">✓ 96% Match</span>
+      </div>
+      <div class="demo-foot">Run this query with Clef →</div>
     </button>
 
     <!-- TRY SUGGESTIONS -->
-    <div class="try">
-      <div class="ex">
-        <span class="tryh">Try</span>
-        <button class="exb" type="button" data-lane="sweethearting" data-q="cashiers scanning ribeye steak, voiding it, and entering bananas">cashiers scanning ribeye steak, voiding it, and entering bananas</button>
-        <button class="exb" type="button" data-lane="post_void" data-q="completed cash transactions post-voided after customer departure">completed cash transactions post-voided after customer departure</button>
-        <button class="exb" type="button" data-lane="refunds" data-q="unverified cash refunds over $50 without receipt">unverified cash refunds over $50 without receipt</button>
-        <button class="exb" type="button" data-lane="refunds" data-q="attendant security overrides on self-checkout lane 4">attendant security overrides on self-checkout lane 4</button>
-        <button class="exb" type="button" data-lane="universal" data-q="missed high-priority customer emails over 24 hours">missed high-priority customer emails over 24 hours</button>
+    <div class="try-section">
+      <div class="try-title">Try Discovery & Knowledge</div>
+      <div class="try-chips" id="discoveryChips">
+        <button class="chip" type="button" data-q="find me random supermarkets in Texas">find me random supermarkets in Texas</button>
+        <button class="chip" type="button" data-q="independent coffee roasters in Austin">independent coffee roasters in Austin</button>
+        <button class="chip" type="button" data-q="convenience stores with 24/7 service in Dallas">convenience stores with 24/7 service in Dallas</button>
+      </div>
+
+      <div class="try-title" style="margin-top: 14px;">Try Retail Theft & Exception Detection</div>
+      <div class="try-chips" id="dataChips">
+        <button class="chip" type="button" data-q="cashiers scanning ribeye steak, voiding it, and entering bananas" data-preset="sweethearting">cashiers scanning ribeye steak, voiding it, and entering bananas</button>
+        <button class="chip" type="button" data-q="completed cash transactions post-voided after customer departure" data-preset="post_void">completed cash transactions post-voided after customer departure</button>
+        <button class="chip" type="button" data-q="unverified cash refunds over $50 without receipt" data-preset="refunds">unverified cash refunds over $50 without receipt</button>
       </div>
     </div>
 
     <!-- RECENT SEARCHES -->
-    <div class="recent hidden" id="recent">
-      <div class="tryh">Your recent investigations</div>
+    <div class="recent-box hidden" id="recentBox">
+      <div class="try-title">Recent Investigations</div>
       <div id="recentList"></div>
-    </div>
-
-    <div class="sfoot">
-      Clef Store Guard · Edge AI Decision Engine on Cloudflare Workers AI (@cf/cloudflare/clef-flash)
     </div>
   </div>
 
   <!-- RESULTS SECTION -->
-  <div class="results hidden" id="results">
+  <div class="results hidden" id="resultsSection">
     <!-- LIVE STATS TICKER -->
-    <div class="live" id="live" aria-live="polite">
-      <div class="lvHead">
-        <span class="lvKick" id="lvKick">Clef Store Guard × Workers AI · live</span>
-        <h2 id="lvTitle">Sweethearting scan-and-void substitutions</h2>
+    <div class="live-card" id="liveCard">
+      <div class="live-kick">
+        <span class="live-pulse"></span>
+        <span id="liveStatusLabel">Clef Intelligence · live edge execution</span>
       </div>
-      <div class="lvStats">
-        <div class="lvStat dark">
-          <label>Records checked</label>
-          <b id="lvFound">248</b>
-          <small id="lvRecordNote">100% evaluated on edge</small>
-          <i><em id="lvBarA" style="width: 100%;"></em></i>
+      <h2 class="live-title" id="liveTitle">Target Query</h2>
+      <div class="live-stats">
+        <div class="stat-tile primary-stat">
+          <label id="statFoundLabel">Entities / Records</label>
+          <b id="statFoundVal">0</b>
+          <small id="statFoundSub">100% evaluated</small>
         </div>
-        <div class="lvStat">
-          <label>Flagged by Clef</label>
-          <b id="lvChecked">3</b>
-          <small id="lvMatch">3 matches passed criteria</small>
-          <i><em id="lvBarB" style="width: 100%;"></em></i>
+        <div class="stat-tile">
+          <label>Clef Matches</label>
+          <b id="statMatchesVal">0</b>
+          <small id="statMatchesSub">Criteria matched</small>
         </div>
-        <div class="lvStat risk">
-          <label id="lvImpactLbl">Money at risk</label>
-          <b id="lvImpact">$124.50</b>
-          <small id="lvImpactNote">Cumulative store exposure</small>
+        <div class="stat-tile">
+          <label id="statImpactLabel">Market / Impact</label>
+          <b id="statImpactVal">0</b>
+          <small id="statImpactSub">Directory score</small>
         </div>
-        <div class="lvStat">
+        <div class="stat-tile">
           <label>Edge Latency</label>
-          <b id="lvTime">0.34s</b>
-          <small id="lvModel">@cf/cloudflare/clef-flash</small>
+          <b id="statLatencyVal">0.28s</b>
+          <small id="statModelVal">@cf/cloudflare/clef-flash</small>
         </div>
       </div>
     </div>
 
     <!-- SIDEBAR FILTERS -->
-    <aside class="side" id="side">
-      <div class="sidehead">
+    <aside class="side" id="sideFilters">
+      <div class="side-head">
         <b>Filters</b>
-        <button class="link hidden" id="clearAll" type="button">Clear all</button>
+        <button class="link hidden" id="clearFiltersBtn" type="button">Clear</button>
       </div>
-      <div class="fnote">Instant. The numbers show how many each one leaves.</div>
-      <div id="groups"></div>
-      <button class="btn sideDone" id="sideDone" type="button">Show results</button>
+      <div class="fnote">Instant client filtering.</div>
+      <div id="filterGroups"></div>
     </aside>
 
-    <!-- MAIN RESULTS TABLE -->
+    <!-- MAIN RESULTS LIST -->
     <section class="main">
-      <div class="bar1">
-        <div class="count" id="count">3 matches found</div>
-        <div class="actions" id="actions">
-          <button class="btn ghost sm filtersBtn" id="filtersBtn" type="button">Filters</button>
-          <button class="btn sm" id="copyReportBtn" type="button" data-tip="Copies formatted incident report to clipboard">Copy Report</button>
-          <button class="btn ghost sm" id="csvBtn" type="button" data-tip="Download findings as a spreadsheet">Download CSV</button>
-          <button class="btn ghost sm" id="jsonBtn" type="button" data-tip="Export raw findings as JSON">JSON</button>
+      <div class="main-bar">
+        <div class="count-text" id="resultCountText">0 matches found</div>
+        <div class="actions-row">
+          <button class="btn ghost sm" id="copyReportBtn" type="button">Copy Report</button>
+          <button class="btn ghost sm" id="downloadCsvBtn" type="button">Download CSV</button>
+          <button class="btn ghost sm" id="exportJsonBtn" type="button">JSON</button>
         </div>
       </div>
-      <div class="meta" id="meta"></div>
-      <div class="tabs" id="tabs"></div>
-      <div class="prog" id="progWrap"><i id="prog"></i></div>
-      <div class="list" id="list"></div>
+      <div class="main-meta" id="resultMeta"></div>
+      <div class="tabs-row" id="tabsRow"></div>
+      <div class="prog-line" id="progLine"><i id="progFill"></i></div>
+      <div class="findings-list" id="findingsList"></div>
     </section>
   </div>
 </div>
 
-<!-- CUSTOM DATA & PRESETS DRAWER -->
-<div class="drawerBg hidden" id="drawerBg"></div>
-<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Input Custom Data or Files">
-  <div class="dhead">
-    <b>Input Custom Data or Files</b>
-    <button class="link" id="drawerX" type="button">Close</button>
-  </div>
-  <p class="dsub">Drop any CSV/JSON file or paste transaction records. Clef crunches your exact data.</p>
-
-  <div class="dsection">
-    <div class="dtitle">1-Click Sample Datasets</div>
-    <div class="preset-chips">
-      <button class="pchip" type="button" data-preset="sweethearting">
-        <div><b>🥩 Retail Sweethearting</b><span>Steak-to-banana voids & substitutions</span></div>
-        <span class="mono">248 rows</span>
-      </button>
-      <button class="pchip" type="button" data-preset="post_void">
-        <div><b>💵 Cash Till Skimming</b><span>Completed cash sales post-voided</span></div>
-        <span class="mono">190 rows</span>
-      </button>
-      <button class="pchip" type="button" data-preset="refunds">
-        <div><b>🧾 Unverified Cash Refunds</b><span>Returns without customer receipt</span></div>
-        <span class="mono">115 rows</span>
-      </button>
-      <button class="pchip" type="button" data-preset="overrides">
-        <div><b>🛡️ Attendant Security Overrides</b><span>Self-checkout supervisor key bypass</span></div>
-        <span class="mono">84 rows</span>
-      </button>
-      <button class="pchip" type="button" data-preset="missed_emails">
-        <div><b>📧 Missed Customer Emails</b><span>SLA response times >24h</span></div>
-        <span class="mono">92 rows</span>
-      </button>
-      <button class="pchip" type="button" data-preset="server_errors">
-        <div><b>💻 Server 500 & Latency Logs</b><span>Upstream timeouts & spikes</span></div>
-        <span class="mono">140 rows</span>
-      </button>
-    </div>
-  </div>
-
-  <div class="dsection">
-    <div class="dtitle">Or Upload Your File</div>
-    <div class="droparea" id="dropArea">
-      <input type="file" id="fileInput" style="display: none;" accept=".csv,.tsv,.json,.txt,.log">
-      <b>Drop CSV, TSV, or JSON file here</b>
-      <span>or click to browse from your computer</span>
-    </div>
-    <div class="dfootline" id="fileChosenLabel">No custom file loaded yet</div>
-  </div>
-
-  <div class="dsection">
-    <div class="dtitle">Or Paste Raw Records</div>
-    <textarea class="pastebox" id="pasteArea" placeholder="tx_id,store_id,register_id,cashier_id,timestamp,event_type,item_desc,total_price&#10;TX_01,STORE_101,LANE_01,CASHIER_17,2026-09-15 08:00:00,ITEM_SCAN,Filet Mignon,39.99&#10;TX_01,STORE_101,LANE_01,CASHIER_17,2026-09-15 08:00:05,ITEM_VOID,Filet Mignon,39.99&#10;TX_01,STORE_101,LANE_01,CASHIER_17,2026-09-15 08:00:10,ITEM_MANUAL,Bananas,0.59"></textarea>
-    <div class="dfootline">
-      <span id="pasteCounter">0 lines · 0 characters</span>
-      <button class="link" id="clearPasteBtn" type="button">Clear text</button>
-    </div>
-  </div>
-
-  <div style="margin-top: 18px; display: flex; gap: 8px;">
-    <button class="btn" id="applyDataBtn" style="flex: 1;" type="button">Use This Dataset</button>
-    <button class="btn ghost" id="cancelDrawerBtn" type="button">Cancel</button>
-  </div>
-</aside>
-
-<!-- TOAST -->
 <div class="toast" id="toast"></div>
 
 <script src="/app.js"></script>

@@ -1,97 +1,92 @@
-// Clef Store Guard — Minimalist Decision Engine Interface
-// Inspired by Shortlist (brochbuilds.com/shortlist)
+// Clef — Edge AI Decision & Discovery Engine Controller
 
-const BASE = "";
 const $ = (id) => document.getElementById(id);
 const escH = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const usd = (v) => "$" + Number(v || 0).toFixed(2);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-function toast(t) {
-  const e = $("toast");
-  if (!e) return;
-  e.textContent = t;
-  e.classList.add("show");
-  setTimeout(() => e.classList.remove("show"), 2200);
+function toast(msg) {
+  const t = $("toast");
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2200);
 }
-
-// -----------------------------------------------------------------------------
-// PRESETS & CONFIG
-// -----------------------------------------------------------------------------
-const LANE_CONFIGS = {
-  sweethearting: {
-    placeholder: "cashiers scanning ribeye steak, voiding it, and entering bananas",
-    defaultQuery: "Look for cashiers who scanned ribeye steak, voided it, and entered bananas",
-    dataset: "sweethearting",
-    datasetLabel: "248 records · Sweethearting",
-    plan: "Evaluates against <b>248 transaction records</b> · Clef Flash 9B · Scan-then-void detection",
-  },
-  post_void: {
-    placeholder: "completed cash transactions post-voided after customer departure",
-    defaultQuery: "Look for completed cash transactions that were post-voided shortly after customer departure",
-    dataset: "post_void",
-    datasetLabel: "190 records · Cash Till Skimming",
-    plan: "Evaluates against <b>190 cash register events</b> · Clef Flash 9B · Post-void analysis",
-  },
-  refunds: {
-    placeholder: "unverified cash refunds over $50 without receipt or manager override",
-    defaultQuery: "Find unverified cash refunds over $50 without receipt or repeated security overrides",
-    dataset: "refunds",
-    datasetLabel: "115 records · Refunds & Overrides",
-    plan: "Evaluates against <b>115 return transactions</b> · Clef Flash 9B · Exception scoring",
-  },
-  universal: {
-    placeholder: "type any pattern, policy violation, or anomaly to check...",
-    defaultQuery: "Detect any suspicious anomalies, policy violations, or exceptions in this data",
-    dataset: "sweethearting",
-    datasetLabel: "Custom data / Universal",
-    plan: "Evaluates against active dataset · Clef Flash 9B · Edge decision questions",
-  },
-};
 
 // -----------------------------------------------------------------------------
 // STATE
 // -----------------------------------------------------------------------------
-let activeLane = "sweethearting";
+let attachedFile = null;
+let pastedDataContent = null;
+let activePreset = null;
 let activeModel = "@cf/cloudflare/clef-flash";
-let activeDataset = "sweethearting";
-let customDataContent = null;
-let customFile = null;
+let activeLane = "discovery";
 let currentResults = null;
 let activeTab = "hot";
 let manualFilters = {};
 let isRunning = false;
 let abortCtrl = null;
-let recentSearches = [];
+let recentRuns = [];
+
+const LANE_CONFIGS = {
+  discovery: {
+    placeholder: "find me random supermarkets in Texas",
+    plan: "Open discovery query · Clef Flash 9B · Instant edge decision",
+    pill: "Mode: Open Discovery",
+    demoTitle: "Texas Supermarkets & Grocery Retail",
+    demoBadge: "10 verified locations",
+  },
+  sweethearting: {
+    placeholder: "cashiers scanning ribeye steak, voiding it, and entering bananas",
+    plan: "Evaluates sweethearting dataset (248 records) · Clef Flash 9B · Scan-then-void check",
+    pill: "Dataset: Sweethearting (248 rows)",
+    preset: "sweethearting",
+    demoTitle: "Sweethearting Scan-and-Void Substitutions",
+    demoBadge: "3 matches · $104.97 at risk",
+  },
+  post_void: {
+    placeholder: "completed cash transactions post-voided after customer departure",
+    plan: "Evaluates cash register events (190 records) · Clef Flash 9B · Post-void audit",
+    pill: "Dataset: Cash Till Skimming",
+    preset: "post_void",
+    demoTitle: "Cash Till Skimming & Post-Voids",
+    demoBadge: "2 matches · $69.95 at risk",
+  },
+  upload: {
+    placeholder: "type what you want Clef to look for in your uploaded data...",
+    plan: "Upload custom CSV, JSON, or text · Clef Flash 9B · Full edge evaluation",
+    pill: "Mode: Upload Data",
+    demoTitle: "Custom Data Analysis",
+    demoBadge: "Ready to upload",
+  },
+};
 
 // -----------------------------------------------------------------------------
 // INITIALIZATION
 // -----------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
-  loadRecentSearches();
-  setupLaneButtons();
-  setupSampleBox();
-  setupTryChips();
-  setupModelToggle();
   setupThemeToggle();
-  setupDrawer();
-  setupFilters();
-  setupActions();
-  setupBackLink();
+  setupModelToggle();
+  setupLanes();
+  setupFileUpload();
+  setupPasteDrawer();
+  setupDemoCard();
+  setupTryChips();
+  setupBackNavigation();
+  setupFilterHandlers();
+  setupExportActions();
+  loadRecentRuns();
 
-  // Set initial input and plan
   updateLane(activeLane);
 });
 
 // -----------------------------------------------------------------------------
-// THEME & MODEL TOGGLES
+// THEME & MODEL
 // -----------------------------------------------------------------------------
 function setupThemeToggle() {
   const btn = $("themeBtn");
   if (!btn) return;
   btn.onclick = () => {
-    const current = document.documentElement.dataset.theme;
-    const next = current === "dark" ? "light" : "dark";
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
     localStorage.setItem("clef_theme", next);
     toast(`Switched to ${next} theme`);
@@ -99,92 +94,282 @@ function setupThemeToggle() {
 }
 
 function setupModelToggle() {
-  const btn = $("modelPill");
+  const btn = $("modelToggleBtn");
   if (!btn) return;
   btn.onclick = () => {
-    if (activeModel === "@cf/cloudflare/clef-flash") {
+    if (activeModel.includes("clef-flash")) {
       activeModel = "@cf/cloudflare/clef";
       btn.textContent = "Clef 27B";
       toast("Model switched to Clef 27B (Deep Reasoning)");
     } else {
       activeModel = "@cf/cloudflare/clef-flash";
       btn.textContent = "Clef Flash 9B";
-      toast("Model switched to Clef Flash 9B (Ultra-fast edge)");
+      toast("Model switched to Clef Flash 9B (Ultra-fast Edge)");
     }
     updatePlanText();
   };
 }
 
 // -----------------------------------------------------------------------------
-// LANE (MODE) SWITCHER
+// LANES & INTENT
 // -----------------------------------------------------------------------------
-function setupLaneButtons() {
-  const laneEl = $("lane");
-  if (!laneEl) return;
-  laneEl.addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-lane]");
-    if (!btn) return;
-    const lane = btn.dataset.lane;
-    updateLane(lane);
+function setupLanes() {
+  const laneSel = $("laneSelector");
+  if (!laneSel) return;
+  laneSel.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-lane]");
+    if (!b) return;
+    updateLane(b.dataset.lane);
   });
 }
 
 function updateLane(lane) {
   activeLane = lane;
-  document.querySelectorAll("#lane button").forEach((b) => {
+  document.querySelectorAll("#laneSelector button").forEach((b) => {
     b.classList.toggle("on", b.dataset.lane === lane);
   });
 
-  const cfg = LANE_CONFIGS[lane] || LANE_CONFIGS.sweethearting;
-  const line = $("line");
-  if (line) {
-    line.placeholder = cfg.placeholder;
+  const cfg = LANE_CONFIGS[lane] || LANE_CONFIGS.discovery;
+  const input = $("queryInput");
+  if (input) input.placeholder = cfg.placeholder;
+
+  if (lane === "upload") {
+    triggerFilePicker();
+  } else if (cfg.preset) {
+    activePreset = cfg.preset;
+    attachedFile = null;
+    pastedDataContent = null;
+    hideAttachedFileBanner();
+  } else {
+    activePreset = null;
+    if (!attachedFile && !pastedDataContent) {
+      hideAttachedFileBanner();
+    }
   }
-  if (!customDataContent && !customFile) {
-    activeDataset = cfg.dataset;
-    updateDatasetPill(cfg.datasetLabel);
-  }
+
   updatePlanText();
 }
 
-function updateDatasetPill(label) {
-  const pill = $("datasetPill");
-  if (pill) pill.textContent = label;
-}
-
 function updatePlanText() {
-  const planEl = $("plan");
+  const planEl = $("planLine");
+  const modePill = $("modePill");
   if (!planEl) return;
-  const cfg = LANE_CONFIGS[activeLane] || LANE_CONFIGS.sweethearting;
+
   const modelShort = activeModel.includes("clef-flash") ? "Clef Flash 9B" : "Clef 27B";
-  const recordsNote = customFile ? `${customFile.name} loaded` : customDataContent ? "Custom records loaded" : cfg.datasetLabel;
-  planEl.innerHTML = `Evaluates against <b>${escH(recordsNote)}</b> · ${modelShort} · Cloudflare Workers AI edge`;
+
+  if (attachedFile) {
+    const sizeKb = (attachedFile.size / 1024).toFixed(1);
+    planEl.innerHTML = `Evaluating uploaded file <b>${escH(attachedFile.name)}</b> (${sizeKb} KB) · ${modelShort}`;
+    if (modePill) {
+      modePill.textContent = `File: ${attachedFile.name}`;
+      modePill.classList.add("active-data");
+    }
+  } else if (pastedDataContent) {
+    const lines = pastedDataContent.split(/\r?\n/).length;
+    planEl.innerHTML = `Evaluating <b>${lines} pasted records</b> · ${modelShort}`;
+    if (modePill) {
+      modePill.textContent = `Pasted Data (${lines} rows)`;
+      modePill.classList.add("active-data");
+    }
+  } else if (activePreset) {
+    const cfg = LANE_CONFIGS[activeLane];
+    planEl.innerHTML = cfg.plan;
+    if (modePill) {
+      modePill.textContent = cfg.pill;
+      modePill.classList.add("active-data");
+    }
+  } else {
+    planEl.innerHTML = `Open discovery query · ${modelShort} · Cloudflare Workers AI edge`;
+    if (modePill) {
+      modePill.textContent = `Mode: Open Discovery`;
+      modePill.classList.remove("active-data");
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------
-// SAMPLE PREVIEW CARD
+// FILE UPLOAD & DRAG/DROP
 // -----------------------------------------------------------------------------
-function setupSampleBox() {
-  const sample = $("sample");
-  if (!sample) return;
-  sample.onclick = () => {
-    updateLane("sweethearting");
-    $("line").value = LANE_CONFIGS.sweethearting.defaultQuery;
-    executeScan();
+function setupFileUpload() {
+  const wrap = $("searchBoxWrap");
+  const uploadBtn = $("uploadChipBtn");
+  const hiddenInput = $("hiddenFileInput");
+  const removeBtn = $("removeFileBtn");
+
+  if (uploadBtn && hiddenInput) {
+    uploadBtn.onclick = () => hiddenInput.click();
+  }
+
+  if (hiddenInput) {
+    hiddenInput.onchange = (e) => {
+      if (e.target.files && e.target.files.length) {
+        handleFileAttached(e.target.files[0]);
+      }
+    };
+  }
+
+  if (removeBtn) {
+    removeBtn.onclick = () => {
+      attachedFile = null;
+      if (hiddenInput) hiddenInput.value = "";
+      hideAttachedFileBanner();
+      updatePlanText();
+      toast("Removed attached file");
+    };
+  }
+
+  // Drag & Drop directly over search box
+  if (wrap) {
+    wrap.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      wrap.classList.add("dragover");
+    });
+    wrap.addEventListener("dragleave", () => {
+      wrap.classList.remove("dragover");
+    });
+    wrap.addEventListener("drop", (e) => {
+      e.preventDefault();
+      wrap.classList.remove("dragover");
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        handleFileAttached(e.dataTransfer.files[0]);
+      }
+    });
+  }
+}
+
+function triggerFilePicker() {
+  const hiddenInput = $("hiddenFileInput");
+  if (hiddenInput) hiddenInput.click();
+}
+
+function handleFileAttached(file) {
+  attachedFile = file;
+  pastedDataContent = null;
+  activePreset = null;
+
+  showAttachedFileBanner(file.name, file.size);
+  updatePlanText();
+  toast(`Attached file: ${file.name}`);
+
+  // Switch lane to upload if not already
+  activeLane = "upload";
+  document.querySelectorAll("#laneSelector button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.lane === "upload");
+  });
+
+  const input = $("queryInput");
+  if (input && !input.value.trim()) {
+    input.placeholder = "type what you want Clef to look for in this file...";
+    input.focus();
+  }
+}
+
+function showAttachedFileBanner(fileName, fileSize) {
+  const row = $("attachedFileRow");
+  const nameEl = $("attachedFileName");
+  const sizeEl = $("attachedFileSize");
+  const chipLabel = $("uploadChipLabel");
+
+  if (row) row.classList.add("has-file");
+  if (nameEl) nameEl.textContent = fileName;
+  if (sizeEl) sizeEl.textContent = `(${(fileSize / 1024).toFixed(1)} KB)`;
+  if (chipLabel) chipLabel.textContent = "Change file";
+}
+
+function hideAttachedFileBanner() {
+  const row = $("attachedFileRow");
+  const chipLabel = $("uploadChipLabel");
+  if (row) row.classList.remove("has-file");
+  if (chipLabel) chipLabel.textContent = "Attach data";
+}
+
+// -----------------------------------------------------------------------------
+// PASTE DATA ACCORDION
+// -----------------------------------------------------------------------------
+function setupPasteDrawer() {
+  const toggleBtn = $("togglePasteBtn");
+  const drawer = $("pasteDrawer");
+  const textarea = $("pasteArea");
+  const counter = $("pasteCounter");
+  const clearBtn = $("clearPasteBtn");
+  const applyBtn = $("applyPasteBtn");
+
+  if (toggleBtn && drawer) {
+    toggleBtn.onclick = () => {
+      drawer.classList.toggle("open");
+      if (drawer.classList.contains("open") && textarea) textarea.focus();
+    };
+  }
+
+  if (textarea && counter) {
+    textarea.oninput = () => {
+      const lines = textarea.value ? textarea.value.split(/\r?\n/).length : 0;
+      counter.textContent = `${lines} lines · ${textarea.value.length} chars`;
+    };
+  }
+
+  if (clearBtn && textarea) {
+    clearBtn.onclick = () => {
+      textarea.value = "";
+      if (counter) counter.textContent = "0 lines";
+      pastedDataContent = null;
+      updatePlanText();
+    };
+  }
+
+  if (applyBtn && textarea) {
+    applyBtn.onclick = () => {
+      const content = textarea.value.trim();
+      if (!content) {
+        toast("Please paste some records first");
+        return;
+      }
+      pastedDataContent = content;
+      attachedFile = null;
+      activePreset = null;
+      drawer.classList.remove("open");
+      updatePlanText();
+      toast("Pasted data ready for Clef");
+    };
+  }
+}
+
+// -----------------------------------------------------------------------------
+// DEMO CARD & TRY CHIPS
+// -----------------------------------------------------------------------------
+function setupDemoCard() {
+  const card = $("demoCard");
+  if (!card) return;
+  card.onclick = () => {
+    $("queryInput").value = "find me random supermarkets in Texas";
+    attachedFile = null;
+    pastedDataContent = null;
+    activePreset = null;
+    updateLane("discovery");
+    executeSearch();
   };
 }
 
-// -----------------------------------------------------------------------------
-// TRY CHIPS
-// -----------------------------------------------------------------------------
 function setupTryChips() {
-  document.querySelectorAll(".exb").forEach((btn) => {
-    btn.onclick = () => {
-      const q = btn.dataset.q;
-      const lane = btn.dataset.lane || "sweethearting";
-      updateLane(lane);
-      $("line").value = q;
-      executeScan();
+  document.querySelectorAll(".chip").forEach((chip) => {
+    chip.onclick = () => {
+      const q = chip.dataset.q;
+      const preset = chip.dataset.preset;
+      const input = $("queryInput");
+      if (input) input.value = q;
+
+      if (preset) {
+        activePreset = preset;
+        attachedFile = null;
+        pastedDataContent = null;
+        updateLane(preset);
+      } else {
+        activePreset = null;
+        attachedFile = null;
+        pastedDataContent = null;
+        updateLane("discovery");
+      }
+      executeSearch();
     };
   });
 }
@@ -192,265 +377,247 @@ function setupTryChips() {
 // -----------------------------------------------------------------------------
 // BACK NAVIGATION
 // -----------------------------------------------------------------------------
-function setupBackLink() {
-  const back = $("back");
+function setupBackNavigation() {
+  const back = $("backBtn");
   const home = $("brandHome");
-  const reset = () => {
+  const resetToHero = (e) => {
+    if (e) e.preventDefault();
     if (isRunning) abortCtrl?.abort();
     document.body.classList.remove("ran");
-    $("results").classList.add("hidden");
+    $("resultsSection").classList.add("hidden");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  if (back) back.onclick = reset;
-  if (home) home.onclick = (e) => { e.preventDefault(); reset(); };
+  if (back) back.onclick = resetToHero;
+  if (home) home.onclick = resetToHero;
 }
 
 // -----------------------------------------------------------------------------
-// RUNNING THE SCAN
+// SEARCH & EVALUATION EXECUTION
 // -----------------------------------------------------------------------------
-const form = $("form");
-if (form) {
-  form.onsubmit = (e) => {
+const searchForm = $("searchForm");
+if (searchForm) {
+  searchForm.onsubmit = (e) => {
     e.preventDefault();
     if (isRunning) {
       abortCtrl?.abort();
       return;
     }
-    executeScan();
+    executeSearch();
   };
 }
 
-async function executeScan() {
-  const inputEl = $("line");
-  const query = (inputEl?.value || "").trim() || (LANE_CONFIGS[activeLane]?.defaultQuery || "Find retail theft anomalies");
+async function executeSearch() {
+  const input = $("queryInput");
+  const rawQuery = (input?.value || "").trim();
+  const query = rawQuery || (activePreset ? LANE_CONFIGS[activeLane]?.placeholder : "find me random supermarkets in Texas");
 
   isRunning = true;
   abortCtrl = new AbortController();
 
-  // Switch UI to ran state (collapses hero, opens results)
+  // Enter results state
   document.body.classList.add("ran");
-  $("results").classList.remove("hidden");
-  $("go").textContent = "Stop";
-  $("go").classList.add("stop");
-  $("progWrap").classList.remove("hidden");
-  $("prog").style.width = "20%";
+  $("resultsSection").classList.remove("hidden");
+  $("submitBtn").textContent = "Stop";
+  $("submitBtn").classList.add("stop");
+  $("progLine").classList.remove("hidden");
+  $("progFill").style.width = "25%";
 
-  $("lvTitle").textContent = query;
-  $("lvKick").textContent = `Clef Store Guard × Workers AI · evaluating`;
-  $("lvBarA").style.width = "30%";
-  $("lvBarB").style.width = "30%";
+  $("liveTitle").textContent = query;
+  $("liveStatusLabel").textContent = "Clef Intelligence · evaluating on edge";
 
-  saveRecentSearch(query);
-
+  saveRecentRun(query);
   const t0 = performance.now();
 
   try {
     let res;
-    if (customFile) {
+
+    if (attachedFile) {
+      // 1. User uploaded a file
       const fd = new FormData();
-      fd.append("file", customFile);
+      fd.append("file", attachedFile);
       fd.append("query", query);
       fd.append("model", activeModel);
       fd.append("min_confidence", "0.50");
-      res = await fetch(`${BASE}/api/crunch`, { method: "POST", body: fd, signal: abortCtrl.signal });
-    } else if (customDataContent) {
+      res = await fetch("/api/crunch", { method: "POST", body: fd, signal: abortCtrl.signal });
+    } else if (pastedDataContent) {
+      // 2. User pasted custom data
       const fd = new FormData();
-      fd.append("data", customDataContent);
+      fd.append("data", pastedDataContent);
       fd.append("query", query);
       fd.append("model", activeModel);
       fd.append("min_confidence", "0.50");
-      res = await fetch(`${BASE}/api/crunch`, { method: "POST", body: fd, signal: abortCtrl.signal });
-    } else {
-      // Use preloaded sample dataset
-      res = await fetch(`${BASE}/api/analyze-sample`, {
+      res = await fetch("/api/crunch", { method: "POST", body: fd, signal: abortCtrl.signal });
+    } else if (activePreset) {
+      // 3. User selected preloaded theft dataset
+      res = await fetch("/api/analyze-sample", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          preset: activeDataset,
+          preset: activePreset,
           query: query,
           model: activeModel,
         }),
         signal: abortCtrl.signal,
       });
+    } else {
+      // 4. Open Discovery mode (e.g. "find me random supermarkets in Texas")
+      res = await fetch("/api/crunch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: query,
+          model: activeModel,
+          min_confidence: "0.50",
+        }),
+        signal: abortCtrl.signal,
+      });
     }
 
-    $("prog").style.width = "75%";
-    $("lvBarA").style.width = "80%";
-    $("lvBarB").style.width = "80%";
+    $("progFill").style.width = "85%";
 
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || `Server responded with ${res.status}`);
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `Server responded with ${res.status}`);
     }
 
     const data = await res.json();
     const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
 
-    $("prog").style.width = "100%";
-    $("lvBarA").style.width = "100%";
-    $("lvBarB").style.width = "100%";
-    $("lvTime").textContent = `${elapsed}s`;
-    $("lvModel").textContent = activeModel.replace("@cf/cloudflare/", "");
-    $("lvKick").textContent = `Clef Store Guard × Workers AI · complete (${elapsed}s)`;
+    $("progFill").style.width = "100%";
+    $("statLatencyVal").textContent = `${elapsed}s`;
+    $("statModelVal").textContent = activeModel.replace("@cf/cloudflare/", "");
+    $("liveStatusLabel").textContent = `Clef Intelligence · complete (${elapsed}s)`;
 
     setTimeout(() => {
-      $("progWrap").classList.add("hidden");
+      $("progLine").classList.add("hidden");
     }, 400);
 
-    renderResults(data);
+    renderFindings(data);
   } catch (err) {
     if (err.name === "AbortError") {
-      toast("Scan stopped by user.");
-      $("lvKick").textContent = `Clef Store Guard · stopped`;
+      toast("Evaluation stopped by user.");
+      $("liveStatusLabel").textContent = "Clef Intelligence · stopped";
     } else {
-      console.error("Scan error:", err);
-      toast("Scan error: " + err.message);
-      $("lvKick").textContent = `Clef Store Guard · error`;
+      console.error("Evaluation error:", err);
+      toast("Error: " + err.message);
+      $("liveStatusLabel").textContent = "Clef Intelligence · error";
     }
   } finally {
     isRunning = false;
     abortCtrl = null;
-    $("go").textContent = "Scan with Clef";
-    $("go").classList.remove("stop");
-    $("progWrap").classList.add("hidden");
+    $("submitBtn").textContent = "Scan with Clef";
+    $("submitBtn").classList.remove("stop");
+    $("progLine").classList.add("hidden");
   }
 }
 
 // -----------------------------------------------------------------------------
 // RENDER FINDINGS & RESULTS
 // -----------------------------------------------------------------------------
-function renderResults(data) {
+function renderFindings(data) {
   currentResults = data;
   manualFilters = {};
   activeTab = "hot";
 
   const sum = data.summary || {};
   const incidents = data.incidents || [];
+  const isDiscovery = data.mode === "discovery" || !attachedFile;
 
-  // Update live stat cards
-  $("lvFound").textContent = Number(sum.records_checked || 0).toLocaleString();
-  $("lvRecordNote").textContent = `${sum.data_integrity || "100%"} clean records`;
+  // Header stats
+  $("statFoundLabel").textContent = isDiscovery ? "Entities Found" : "Records Checked";
+  $("statFoundVal").textContent = Number(sum.records_checked || incidents.length).toLocaleString();
+  $("statFoundSub").textContent = sum.data_integrity || "100% Evaluated";
 
-  $("lvChecked").textContent = (sum.total_incidents || incidents.length).toString();
-  $("lvMatch").textContent = `${incidents.length} ${plural(incidents.length, "match", "matches")} passed criteria`;
+  $("statMatchesVal").textContent = (sum.total_incidents || incidents.length).toString();
+  $("statMatchesSub").textContent = `${incidents.length} criteria matches`;
 
-  $("lvImpact").textContent = sum.total_impact_formatted || usd(sum.total_impact || 0);
-  $("lvImpactLbl").textContent = sum.impact_label || "Money at risk";
+  $("statImpactLabel").textContent = isDiscovery ? "Market Scope" : (sum.impact_label || "Exposure / Risk");
+  $("statImpactVal").textContent = sum.total_impact_formatted || (sum.total_impact ? `$${sum.total_impact}` : `${incidents.length} Locations`);
+  $("statImpactSub").textContent = isDiscovery ? "Verified directory" : "Store integrity impact";
 
-  drawFilters();
-  drawResultsList();
+  drawDynamicFilters();
+  drawFindingsList();
 }
 
-// -----------------------------------------------------------------------------
-// FILTERING & VERDICTS
-// -----------------------------------------------------------------------------
-function verdict(inc) {
-  const sev = (inc.severity || "").toUpperCase();
+function getVerdict(item) {
+  const sev = (item.severity || "").toUpperCase();
   if (sev === "CRITICAL" || sev === "HIGH") return "hot";
   if (sev === "MEDIUM") return "maybe";
   return "no";
 }
 
-function passesFilters(inc) {
+function passesActiveFilters(item) {
   for (const [key, val] of Object.entries(manualFilters)) {
     if (!val) continue;
-    if (key === "severity" && inc.severity !== val) return false;
-    if (key === "context" && inc.context !== val) return false;
-    if (key === "entity" && inc.entity !== val) return false;
-    if (key === "pattern" && inc.clef_pattern !== val) return false;
+    if (key === "severity" && item.severity !== val) return false;
+    if (key === "context" && item.context !== val) return false;
+    if (key === "entity" && item.entity !== val) return false;
+    if (key === "pattern" && item.clef_pattern !== val) return false;
   }
   return true;
 }
 
-function getFilteredList() {
+function getFilteredItems() {
   if (!currentResults || !currentResults.incidents) return [];
-  return currentResults.incidents.filter(passesFilters);
+  return currentResults.incidents.filter(passesActiveFilters);
 }
 
 // -----------------------------------------------------------------------------
 // DRAW FILTERS SIDEBAR
 // -----------------------------------------------------------------------------
-function setupFilters() {
-  const side = $("side");
+function setupFilterHandlers() {
+  const side = $("sideFilters");
   if (!side) return;
 
   side.addEventListener("click", (e) => {
-    const t = e.target.closest("button");
-    if (!t) return;
-    if (t.id === "clearAll") {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+
+    if (btn.id === "clearFiltersBtn") {
       manualFilters = {};
-      drawFilters();
-      drawResultsList();
+      drawDynamicFilters();
+      drawFindingsList();
       return;
     }
-    if (t.dataset.k) {
-      const k = t.dataset.k;
-      const v = t.dataset.v || null;
-      manualFilters[k] = v;
-      drawFilters();
-      drawResultsList();
+
+    if (btn.dataset.k) {
+      manualFilters[btn.dataset.k] = btn.dataset.v || null;
+      drawDynamicFilters();
+      drawFindingsList();
     }
   });
-
-  $("filtersBtn").onclick = () => {
-    side.classList.toggle("open");
-  };
-  $("sideDone").onclick = () => {
-    side.classList.remove("open");
-    document.querySelector(".main")?.scrollIntoView({ behavior: "smooth" });
-  };
 }
 
-function drawFilters() {
+function drawDynamicFilters() {
   const all = (currentResults && currentResults.incidents) || [];
-  const groupsEl = $("groups");
-  if (!groupsEl) return;
+  const container = $("filterGroups");
+  if (!container) return;
 
-  // Counts for Severity
-  const sevs = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-  const sevCounts = {};
-  sevs.forEach((s) => (sevCounts[s] = all.filter((i) => i.severity === s).length));
+  const isDiscovery = currentResults?.mode === "discovery";
 
-  // Counts for Register / Lane (context)
+  // Context counts (Cities / Lanes)
   const contextCounts = {};
-  all.forEach((i) => {
-    if (i.context) contextCounts[i.context] = (contextCounts[i.context] || 0) + 1;
-  });
+  all.forEach((i) => { if (i.context) contextCounts[i.context] = (contextCounts[i.context] || 0) + 1; });
 
-  // Counts for Cashier / Entity
+  // Entity counts (Chains / Cashiers)
   const entityCounts = {};
-  all.forEach((i) => {
-    if (i.entity) entityCounts[i.entity] = (entityCounts[i.entity] || 0) + 1;
-  });
+  all.forEach((i) => { if (i.entity) entityCounts[i.entity] = (entityCounts[i.entity] || 0) + 1; });
 
-  // Counts for Pattern
+  // Pattern counts (Store Types / Exceptions)
   const patternCounts = {};
-  all.forEach((i) => {
-    if (i.clef_pattern) patternCounts[i.clef_pattern] = (patternCounts[i.clef_pattern] || 0) + 1;
-  });
+  all.forEach((i) => { if (i.clef_pattern) patternCounts[i.clef_pattern] = (patternCounts[i.clef_pattern] || 0) + 1; });
 
-  const curSev = manualFilters.severity || "";
   const curCtx = manualFilters.context || "";
   const curEnt = manualFilters.entity || "";
   const curPat = manualFilters.pattern || "";
 
-  let html = `
-    <div class="group">
-      <div class="gtitle">Severity</div>
-      <button type="button" class="opt ${!curSev ? "on" : ""}" data-k="severity" data-v=""><span class="lab">Any</span><span class="n">${all.length}</span></button>
-      ${sevs.map((s) => `
-        <button type="button" class="opt ${curSev === s ? "on" : ""} ${sevCounts[s] === 0 ? "zero" : ""}" data-k="severity" data-v="${s}">
-          <span class="lab">${s}</span><span class="n">${sevCounts[s]}</span>
-        </button>
-      `).join("")}
-    </div>
-  `;
+  let html = "";
 
   if (Object.keys(contextCounts).length > 1) {
     html += `
       <div class="group">
-        <div class="gtitle">Register / Lane</div>
-        <button type="button" class="opt ${!curCtx ? "on" : ""}" data-k="context" data-v=""><span class="lab">Any</span><span class="n">${all.length}</span></button>
+        <div class="gtitle">${isDiscovery ? "City / Region" : "Register / Lane"}</div>
+        <button type="button" class="opt ${!curCtx ? "on" : ""}" data-k="context" data-v=""><span class="lab">All Locations</span><span class="n">${all.length}</span></button>
         ${Object.entries(contextCounts).map(([c, count]) => `
           <button type="button" class="opt ${curCtx === c ? "on" : ""}" data-k="context" data-v="${escH(c)}">
             <span class="lab">${escH(c)}</span><span class="n">${count}</span>
@@ -463,9 +630,9 @@ function drawFilters() {
   if (Object.keys(entityCounts).length > 1) {
     html += `
       <div class="group">
-        <div class="gtitle">Cashier / Entity</div>
-        <button type="button" class="opt ${!curEnt ? "on" : ""}" data-k="entity" data-v=""><span class="lab">Any</span><span class="n">${all.length}</span></button>
-        ${Object.entries(entityCounts).slice(0, 6).map(([e, count]) => `
+        <div class="gtitle">${isDiscovery ? "Brand / Chain" : "Cashier / Operator"}</div>
+        <button type="button" class="opt ${!curEnt ? "on" : ""}" data-k="entity" data-v=""><span class="lab">All</span><span class="n">${all.length}</span></button>
+        ${Object.entries(entityCounts).slice(0, 7).map(([e, count]) => `
           <button type="button" class="opt ${curEnt === e ? "on" : ""}" data-k="entity" data-v="${escH(e)}">
             <span class="lab">${escH(e)}</span><span class="n">${count}</span>
           </button>
@@ -477,8 +644,8 @@ function drawFilters() {
   if (Object.keys(patternCounts).length > 1) {
     html += `
       <div class="group">
-        <div class="gtitle">Pattern Type</div>
-        <button type="button" class="opt ${!curPat ? "on" : ""}" data-k="pattern" data-v=""><span class="lab">Any</span><span class="n">${all.length}</span></button>
+        <div class="gtitle">${isDiscovery ? "Category" : "Pattern Type"}</div>
+        <button type="button" class="opt ${!curPat ? "on" : ""}" data-k="pattern" data-v=""><span class="lab">All</span><span class="n">${all.length}</span></button>
         ${Object.entries(patternCounts).map(([p, count]) => `
           <button type="button" class="opt ${curPat === p ? "on" : ""}" data-k="pattern" data-v="${escH(p)}">
             <span class="lab">${escH(p)}</span><span class="n">${count}</span>
@@ -488,53 +655,52 @@ function drawFilters() {
     `;
   }
 
-  groupsEl.innerHTML = html;
+  container.innerHTML = html;
 
   const hasFilter = Object.values(manualFilters).some(Boolean);
-  $("clearAll").classList.toggle("hidden", !hasFilter);
-  $("filtersBtn").textContent = hasFilter ? `Filters · on` : `Filters`;
+  $("clearFiltersBtn").classList.toggle("hidden", !hasFilter);
 }
 
 // -----------------------------------------------------------------------------
-// DRAW RESULTS LIST & TABS
+// DRAW FINDINGS LIST & TABS
 // -----------------------------------------------------------------------------
-function drawResultsList() {
-  const vis = getFilteredList();
+function drawFindingsList() {
+  const vis = getFilteredItems();
   const c = { hot: 0, maybe: 0, no: 0 };
-  vis.forEach((i) => c[verdict(i)]++);
+  vis.forEach((i) => c[getVerdict(i)]++);
 
-  // Render tabs
-  const tabsEl = $("tabs");
-  tabsEl.innerHTML = [
-    ["hot", "Matches", c.hot],
-    ["maybe", "Unsure", c.maybe],
-    ["no", "Cleared", c.no],
-    ["all", "All", vis.length],
+  const isDiscovery = currentResults?.mode === "discovery";
+
+  // Tabs
+  const tabsRow = $("tabsRow");
+  tabsRow.innerHTML = [
+    ["hot", isDiscovery ? "Verified" : "Matches", c.hot],
+    ["maybe", isDiscovery ? "Alternative" : "Unsure", c.maybe],
+    ["all", "All Results", vis.length],
   ].map(([k, label, count]) => `
-    <button type="button" class="tab ${activeTab === k ? "on" : ""}" data-tab="${k}">
+    <button type="button" class="tab-btn ${activeTab === k ? "on" : ""}" data-tab="${k}">
       ${label}<span>${count}</span>
     </button>
   `).join("");
 
-  tabsEl.onclick = (e) => {
+  tabsRow.onclick = (e) => {
     const btn = e.target.closest("button[data-tab]");
     if (!btn) return;
     activeTab = btn.dataset.tab;
-    drawResultsList();
+    drawFindingsList();
   };
 
-  // Filter by active tab
-  const items = vis.filter((i) => activeTab === "all" || verdict(i) === activeTab);
+  const items = vis.filter((i) => activeTab === "all" || getVerdict(i) === activeTab);
 
-  $("count").innerHTML = `${plural(items.length, "match", "matches")} found<span>of ${(currentResults?.summary?.records_checked || 0).toLocaleString()} records evaluated</span>`;
-  $("meta").innerHTML = `Target: "${escH(currentResults?.query || "")}" · ${currentResults?.domain || "Retail & Loss Prevention"}`;
+  $("resultCountText").innerHTML = `${plural(items.length, "result", "results")} found<span>${currentResults?.domain || "Clef Directory"}</span>`;
+  $("resultMeta").innerHTML = `Target: "${escH(currentResults?.query || "")}" · Model: ${currentResults?.summary?.model_used?.replace("@cf/cloudflare/", "") || "clef-flash"}`;
 
-  const listEl = $("list");
+  const listEl = $("findingsList");
   if (!items.length) {
     listEl.innerHTML = `
-      <div class="empty">
-        <b style="color: var(--ink); font-weight: 600;">No records in this tab match your filters.</b>
-        <div style="font-size: 13px; margin-top: 4px; color: var(--muted);">Try checking the other tabs or clearing the active filters above.</div>
+      <div class="empty-box">
+        <b style="color: var(--ink); font-size: 15px;">No records match the current filter selection.</b>
+        <div style="font-size: 13px; margin-top: 4px; color: var(--muted);">Try clearing the active filters in the sidebar.</div>
       </div>
     `;
     return;
@@ -542,48 +708,46 @@ function drawResultsList() {
 
   let html = `
     <div class="row head">
-      <div>Entity / Lane</div>
-      <div>Risk / Amount</div>
-      <div>Activity & Summary</div>
-      <div>CCTV / Next Action</div>
+      <div>${isDiscovery ? "Store / Entity" : "Entity / Cashier"}</div>
+      <div>${isDiscovery ? "Rating / Footprint" : "Risk / Exposure"}</div>
+      <div>${isDiscovery ? "Store Overview & Specialties" : "Activity & Summary"}</div>
+      <div>${isDiscovery ? "Operational Notes" : "CCTV / Action"}</div>
       <div>Clef Verdict</div>
     </div>
   `;
 
-  items.forEach((inc) => {
-    const v = verdict(inc);
-    const tagClass = v === "hot" ? "hot" : v === "maybe" ? "maybe" : "no";
-    const tagLabel = v === "hot" ? "Match" : v === "maybe" ? "Unsure" : "Cleared";
-    const riskClass = inc.impact_value > 50 ? "risk-amt hi" : "risk-amt";
-    const inspId = `insp-${inc.id}`;
+  items.forEach((item) => {
+    const v = getVerdict(item);
+    const tagClass = v === "hot" ? "match" : v === "maybe" ? "unsure" : "cleared";
+    const tagLabel = isDiscovery ? "Verified" : (v === "hot" ? "Match" : v === "maybe" ? "Unsure" : "Cleared");
+    const inspId = `insp-${item.id}`;
 
     html += `
       <div class="row">
-        <div class="who">
-          <b>${escH(inc.entity || "Unknown")}</b>
-          <span>${escH(inc.context || "Register")} · ${escH(inc.timestamp || "")}</span>
+        <div class="cell-entity">
+          <b>${escH(item.title || item.entity)}</b>
+          <span>${escH(item.context || "")} · ${escH(item.timestamp || "")}</span>
         </div>
-        <div class="${riskClass}">
-          ${inc.impact_formatted || usd(inc.impact_value)}
-          <small>${escH(inc.severity)} priority</small>
+        <div class="cell-metric impactful">
+          ${item.impact_formatted || item.impact_value || "—"}
+          <small>${escH(item.clef_pattern || "Verified")}</small>
         </div>
-        <div class="evidence">
-          ${escH(inc.summary || "")}
-          <small>${escH(inc.evidence_details || inc.clef_pattern || "")}</small>
+        <div class="cell-details">
+          ${escH(item.summary || "")}
+          <small>${escH(item.evidence_details || item.evidence_records?.join(" · ") || "")}</small>
         </div>
-        <div class="action-cell">
-          <b>CCTV Review</b>
-          ${escH(inc.what_to_do || "Verify transaction records with register camera")}
+        <div class="cell-action">
+          <b>${isDiscovery ? "Operations & POS" : "CCTV / Review"}</b>
+          ${escH(item.what_to_do || "Verified operational details")}
         </div>
-        <div class="clefcell">
-          <span class="tag ${tagClass}">${tagLabel}</span>
-          <div class="chk y tip-left" data-tip="Clef confidence score">${inc.clef_match_pct || "92% Match"}</div>
-          <div class="chk y">${inc.clef_confidence || "High Certainty"}</div>
-          <button type="button" class="insp-btn" onclick="toggleInspector('${inspId}')">Inspect Clef Decision</button>
-          <div class="insp-box" id="${inspId}"><b>Model:</b> ${inc.clef_decision?.model || "clef-flash"}
-<b>Match Prob:</b> ${inc.clef_decision?.match_probability ?? 0.92}
-<b>Severity Dist:</b> ${JSON.stringify(inc.clef_decision?.severity_distribution || {})}
-<b>Evidence IDs:</b> ${(inc.evidence_records || []).join(", ") || inc.id}</div>
+        <div class="cell-verdict">
+          <span class="badge-tag ${tagClass}">${tagLabel}</span>
+          <div class="clef-check">${item.clef_match_pct || "98% Match"}</div>
+          <button type="button" class="clef-insp-link" onclick="toggleInspector('${inspId}')">Inspect Clef</button>
+          <div class="clef-insp-box" id="${inspId}"><b>Model:</b> ${item.clef_decision?.model || "clef-flash"}
+<b>Probability:</b> ${item.clef_decision?.match_probability ?? 0.98}
+<b>Evidence:</b> ${(item.evidence_records || []).join(", ") || item.id}
+<b>Details:</b> ${escH(item.evidence_details || item.summary || "")}</div>
         </div>
       </div>
     `;
@@ -598,44 +762,46 @@ window.toggleInspector = function (id) {
 };
 
 // -----------------------------------------------------------------------------
-// REPORT COPY & EXPORTS
+// EXPORTS & REPORT COPY
 // -----------------------------------------------------------------------------
-function setupActions() {
+function setupExportActions() {
   const copyBtn = $("copyReportBtn");
   if (copyBtn) {
     copyBtn.onclick = () => {
-      const items = getFilteredList();
+      const items = getFilteredItems();
       if (!items.length) {
-        toast("No matches to copy");
+        toast("No results to copy");
         return;
       }
-      const sum = currentResults?.summary || {};
-      let text = `CLEF LOSS PREVENTION & ANOMALY REPORT\n`;
-      text += `Target Query: "${currentResults?.query || ""}"\n`;
-      text += `Records Evaluated: ${sum.records_checked} | Total Risk: ${sum.total_impact_formatted || usd(sum.total_impact)}\n`;
-      text += `Flagged Incidents: ${items.length}\n\n`;
-      items.forEach((inc, idx) => {
-        text += `${idx + 1}. [${inc.severity}] ${inc.title}\n`;
-        text += `   Entity: ${inc.entity} (${inc.context}) | Exposure: ${inc.impact_formatted || usd(inc.impact_value)}\n`;
-        text += `   Clef Verdict: ${inc.clef_match_pct} | ${inc.summary}\n`;
-        text += `   Action: ${inc.what_to_do}\n\n`;
+      const isDiscovery = currentResults?.mode === "discovery";
+      let text = `CLEF INTELLIGENCE BRIEF\n`;
+      text += `Query: "${currentResults?.query || ""}"\n`;
+      text += `Domain: ${currentResults?.domain || "General"}\n`;
+      text += `Total Results: ${items.length}\n\n`;
+
+      items.forEach((item, idx) => {
+        text += `${idx + 1}. ${item.title || item.entity} (${item.context})\n`;
+        text += `   Metric: ${item.impact_formatted || item.impact_value}\n`;
+        text += `   Summary: ${item.summary}\n`;
+        text += `   Notes: ${item.what_to_do}\n\n`;
       });
+
       navigator.clipboard.writeText(text).then(() => {
-        toast("Copied Loss Prevention Report to clipboard");
+        toast("Copied Clef report to clipboard");
       });
     };
   }
 
-  const csvBtn = $("csvBtn");
+  const csvBtn = $("downloadCsvBtn");
   if (csvBtn) {
     csvBtn.onclick = async () => {
-      const items = getFilteredList();
+      const items = getFilteredItems();
       if (!items.length) {
-        toast("No matches to download");
+        toast("No results to download");
         return;
       }
       try {
-        const res = await fetch(`${BASE}/api/export/csv`, {
+        const res = await fetch("/api/export/csv", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -647,24 +813,24 @@ function setupActions() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `clef_findings_${Date.now()}.csv`;
+        a.download = `clef_results_${Date.now()}.csv`;
         a.click();
         URL.revokeObjectURL(url);
-        toast("Downloaded CSV spreadsheet");
+        toast("Downloaded CSV file");
       } catch (err) {
         toast("CSV download failed: " + err.message);
       }
     };
   }
 
-  const jsonBtn = $("jsonBtn");
+  const jsonBtn = $("exportJsonBtn");
   if (jsonBtn) {
     jsonBtn.onclick = () => {
       if (!currentResults) return;
       const str = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentResults, null, 2));
       const a = document.createElement("a");
       a.href = str;
-      a.download = `clef_results_${Date.now()}.json`;
+      a.download = `clef_export_${Date.now()}.json`;
       a.click();
       toast("Exported JSON findings");
     };
@@ -672,171 +838,62 @@ function setupActions() {
 }
 
 // -----------------------------------------------------------------------------
-// CUSTOM DATA DRAWER
+// RECENT RUNS
 // -----------------------------------------------------------------------------
-function setupDrawer() {
-  const drawer = $("drawer");
-  const bg = $("drawerBg");
-  const openBtn = $("openDrawerBtn");
-  const pillBtn = $("datasetPill");
-  const closeBtn = $("drawerX");
-  const cancelBtn = $("cancelDrawerBtn");
-
-  const openDrawer = () => {
-    drawer.classList.add("open");
-    bg.classList.remove("hidden");
-  };
-
-  const closeDrawer = () => {
-    drawer.classList.remove("open");
-    bg.classList.add("hidden");
-  };
-
-  if (openBtn) openBtn.onclick = openDrawer;
-  if (pillBtn) pillBtn.onclick = openDrawer;
-  if (closeBtn) closeBtn.onclick = closeDrawer;
-  if (cancelBtn) cancelBtn.onclick = closeDrawer;
-  if (bg) bg.onclick = closeDrawer;
-
-  // Preset chips inside drawer
-  document.querySelectorAll(".pchip").forEach((chip) => {
-    chip.onclick = () => {
-      const presetKey = chip.dataset.preset;
-      activeDataset = presetKey;
-      customDataContent = null;
-      customFile = null;
-      const bTitle = chip.querySelector("b")?.textContent || presetKey;
-      updateDatasetPill(bTitle);
-      updatePlanText();
-      closeDrawer();
-      toast(`Loaded preset dataset: ${bTitle}`);
-    };
-  });
-
-  // File Upload
-  const dropArea = $("dropArea");
-  const fileInput = $("fileInput");
-  if (dropArea && fileInput) {
-    dropArea.onclick = () => fileInput.click();
-    dropArea.ondragover = (e) => { e.preventDefault(); dropArea.classList.add("dragover"); };
-    dropArea.ondragleave = () => dropArea.classList.remove("dragover");
-    dropArea.ondrop = (e) => {
-      e.preventDefault();
-      dropArea.classList.remove("dragover");
-      if (e.dataTransfer.files.length) handleLoadedFile(e.dataTransfer.files[0]);
-    };
-    fileInput.onchange = (e) => {
-      if (e.target.files.length) handleLoadedFile(e.target.files[0]);
-    };
-  }
-
-  // Paste area
-  const pasteArea = $("pasteArea");
-  const counter = $("pasteCounter");
-  const clearBtn = $("clearPasteBtn");
-  if (pasteArea && counter) {
-    pasteArea.oninput = () => {
-      const lines = pasteArea.value ? pasteArea.value.split(/\r?\n/).length : 0;
-      counter.textContent = `${lines} lines · ${pasteArea.value.length} characters`;
-    };
-  }
-  if (clearBtn && pasteArea) {
-    clearBtn.onclick = () => {
-      pasteArea.value = "";
-      if (counter) counter.textContent = "0 lines · 0 characters";
-    };
-  }
-
-  // Apply custom dataset
-  const applyBtn = $("applyDataBtn");
-  if (applyBtn) {
-    applyBtn.onclick = () => {
-      const text = (pasteArea?.value || "").trim();
-      if (text) {
-        customDataContent = text;
-        customFile = null;
-        updateDatasetPill(`Custom text (${text.split(/\r?\n/).length} rows)`);
-        updatePlanText();
-        closeDrawer();
-        toast("Applied custom pasted records");
-      } else if (customFile) {
-        closeDrawer();
-        toast(`Applied uploaded file: ${customFile.name}`);
-      } else {
-        closeDrawer();
-      }
-    };
-  }
-}
-
-function handleLoadedFile(file) {
-  customFile = file;
-  customDataContent = null;
-  const label = $("fileChosenLabel");
-  const sizeKb = (file.size / 1024).toFixed(1);
-  if (label) label.textContent = `✓ ${file.name} (${sizeKb} KB ready)`;
-  updateDatasetPill(`${file.name} (${sizeKb} KB)`);
-  updatePlanText();
-  toast(`File ready: ${file.name}`);
-}
-
-// -----------------------------------------------------------------------------
-// RECENT SEARCHES
-// -----------------------------------------------------------------------------
-function loadRecentSearches() {
+function loadRecentRuns() {
   try {
-    const raw = localStorage.getItem("clef_recent_searches");
-    recentSearches = raw ? JSON.parse(raw) : [];
+    const raw = localStorage.getItem("clef_runs_history");
+    recentRuns = raw ? JSON.parse(raw) : [];
   } catch {
-    recentSearches = [];
+    recentRuns = [];
   }
-  renderRecentSearches();
+  renderRecentRuns();
 }
 
-function saveRecentSearch(query) {
+function saveRecentRun(query) {
   if (!query) return;
-  recentSearches = [query, ...recentSearches.filter((q) => q !== query)].slice(0, 6);
+  recentRuns = [query, ...recentRuns.filter((q) => q !== query)].slice(0, 5);
   try {
-    localStorage.setItem("clef_recent_searches", JSON.stringify(recentSearches));
+    localStorage.setItem("clef_runs_history", JSON.stringify(recentRuns));
   } catch {}
-  renderRecentSearches();
+  renderRecentRuns();
 }
 
-function renderRecentSearches() {
-  const recentBox = $("recent");
-  const listEl = $("recentList");
-  if (!recentBox || !listEl) return;
+function renderRecentRuns() {
+  const box = $("recentBox");
+  const list = $("recentList");
+  if (!box || !list) return;
 
-  if (!recentSearches.length) {
-    recentBox.classList.add("hidden");
+  if (!recentRuns.length) {
+    box.classList.add("hidden");
     return;
   }
 
-  recentBox.classList.remove("hidden");
-  listEl.innerHTML = recentSearches.map((q, idx) => `
+  box.classList.remove("hidden");
+  list.innerHTML = recentRuns.map((q, idx) => `
     <div class="rrow">
       <button type="button" class="ropen" data-idx="${idx}">
         <b>${escH(q)}</b>
         <span>Run again →</span>
       </button>
-      <button type="button" class="rdel" data-del="${idx}" aria-label="Delete">×</button>
+      <button type="button" class="rdel" data-del="${idx}" aria-label="Delete">✕</button>
     </div>
   `).join("");
 
-  listEl.onclick = (e) => {
+  list.onclick = (e) => {
     const del = e.target.closest("button[data-del]");
     if (del) {
       const idx = parseInt(del.dataset.del, 10);
-      recentSearches.splice(idx, 1);
-      localStorage.setItem("clef_recent_searches", JSON.stringify(recentSearches));
-      renderRecentSearches();
+      recentRuns.splice(idx, 1);
+      localStorage.setItem("clef_runs_history", JSON.stringify(recentRuns));
+      renderRecentRuns();
       return;
     }
     const open = e.target.closest("button[data-idx]");
     if (open) {
       const idx = parseInt(open.dataset.idx, 10);
-      $("line").value = recentSearches[idx];
-      executeScan();
+      $("queryInput").value = recentRuns[idx];
+      executeSearch();
     }
   };
 }

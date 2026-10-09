@@ -26,13 +26,32 @@ describe('Clef Crunch & Sample API Endpoints', () => {
     const htmlRes = await fetch(`http://localhost:${port}/index.html`);
     expect(htmlRes.status).toBe(200);
     const html = await htmlRes.text();
-    expect(html).toContain("The world's simplest retail theft & exception scanner");
+    expect(html).toContain("The universal decision engine for data & discovery");
     expect(html).toContain('app.js');
 
     const jsRes = await fetch(`http://localhost:${port}/app.js`);
     expect(jsRes.status).toBe(200);
     const js = await jsRes.text();
-    expect(js).toContain('Clef Store Guard');
+    expect(js).toContain('Clef');
+  });
+
+  it('handles open discovery query without data (e.g. random supermarkets in Texas)', async () => {
+    const res = await fetch(`http://localhost:${port}/api/crunch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: 'find me random supermarkets in Texas',
+        model: '@cf/cloudflare/clef-flash',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.status).toBe('success');
+    expect(json.mode).toBe('discovery');
+    expect(json.domain).toContain('Supermarkets');
+    expect(json.incidents.length).toBeGreaterThan(0);
+    expect(json.incidents[0].title).toBeDefined();
+    expect(json.incidents[0].context).toContain('TX');
   });
 
   it('serves /api/sample-data with sweethearting CSV', async () => {
